@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sre-alert-tracker-clusters
+  labels:
+    app: sre-alert-tracker
+data:
+  clusters.yaml: |
+    clusters:
+      - name: prod-cluster-1
+        prometheus_url: "http://prometheus.prod-1.svc:9090"
+        alertmanager_url: "http://alertmanager.prod-1.svc:9093"
+        interval_hours: 8
+        pull_info: false
+        instance_label: "instance"
+      # Add more clusters as needed:
+      # - name: prod-cluster-2
+      #   prometheus_url: "http://prometheus.prod-2.svc:9090"
+      #   alertmanager_url: "http://alertmanager.prod-2.svc:9093"

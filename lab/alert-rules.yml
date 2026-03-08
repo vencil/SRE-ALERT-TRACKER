@@ -1,0 +1,82 @@
+groups:
+  - name: fake-alerts
+    rules:
+      - alert: FakeMariaDBHighConnections
+        expr: vector(1)
+        for: 0m
+        labels:
+          severity: warning
+          cluster: lab-cluster
+          instance: "db-01:9104"
+          job: "mariadb"
+        annotations:
+          summary: "[LAB] MariaDB connection count exceeds threshold"
+          runbook_url: "https://wiki.example.com/runbooks/mariadb-connections"
+
+      - alert: FakePodHighCPU
+        expr: vector(1)
+        for: 0m
+        labels:
+          severity: critical
+          cluster: lab-cluster
+          instance: "pod-web-abc123"
+          job: "kubelet"
+        annotations:
+          summary: "[LAB] Pod CPU usage > 90%"
+          runbook_url: "https://wiki.example.com/runbooks/pod-high-cpu"
+
+      - alert: FakeNodeMemoryPressure
+        expr: vector(1)
+        for: 0m
+        labels:
+          severity: warning
+          cluster: lab-cluster
+          instance: "node-worker-01"
+          job: "node-exporter"
+        annotations:
+          summary: "[LAB] Node memory usage > 85%"
+
+      - alert: FakeCertificateExpiring
+        expr: vector(1)
+        for: 0m
+        labels:
+          severity: warning
+          cluster: lab-cluster
+          instance: "ingress-controller"
+          job: "cert-manager"
+        annotations:
+          summary: "[LAB] TLS certificate expires in < 30 days"
+          runbook_url: "https://wiki.example.com/runbooks/cert-renewal"
+
+      - alert: FakePVCNearlyFull
+        expr: vector(1)
+        for: 0m
+        labels:
+          severity: critical
+          cluster: lab-cluster
+          instance: "pvc-data-postgres-0"
+          job: "kubelet"
+        annotations:
+          summary: "[LAB] PVC usage > 90%"
+
+      - alert: FakeWatchdog
+        expr: vector(1)
+        for: 0m
+        labels:
+          severity: none
+          cluster: lab-cluster
+          instance: ""
+          job: "prometheus"
+        annotations:
+          summary: "Alertmanager heartbeat — should be filtered out"
+
+      - alert: FakeInfoAlert
+        expr: vector(1)
+        for: 0m
+        labels:
+          severity: info
+          cluster: lab-cluster
+          instance: "api-gateway"
+          job: "api-monitor"
+        annotations:
+          summary: "[LAB] Info-level alert for testing filter"

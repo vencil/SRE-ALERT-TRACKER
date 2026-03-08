@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sre-alert-tracker
+  labels:
+    app: sre-alert-tracker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sre-alert-tracker
+  template:
+    metadata:
+      labels:
+        app: sre-alert-tracker
+    spec:
+      containers:
+        - name: sre-alert-tracker
+          image: sre-alert-tracker:latest
+          ports:
+            - containerPort: 8000
+              protocol: TCP
+          env:
+            - name: AT_AUTH_MODE
+              value: "oauth2-proxy"
+            - name: AT_DATA_DIR
+              value: "/data"
+            - name: AT_CONFIG_DIR
+              value: "/app/config"
+            - name: AT_POLLER_INTERVAL_HOURS
+              value: "8"
+            - name: AT_POLLER_LOOKBACK_HOURS
+              value: "12"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: clusters-config
+              mountPath: /app/config
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: sre-alert-tracker-data
+        - name: clusters-config
+          configMap:
+            name: sre-alert-tracker-clusters

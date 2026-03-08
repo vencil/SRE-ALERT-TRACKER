@@ -1,0 +1,74 @@
+"""Application configuration — reads env vars (AT_* prefix) and clusters.yaml."""
+
+import os
+from pathlib import Path
+from typing import Optional
+
+import yaml
+from pydantic import Field
+from pydantic_settings import BaseSettings
+
+
+class Settings(BaseSettings):
+    """Central configuration loaded from environment variables."""
+
+    # --- Database ---
+    database_url: str = Field(
+        default="",
+        alias="AT_DATABASE_URL",
+        description="Empty = SQLite (/data/alerts.db), otherwise MariaDB connection string",
+    )
+
+    # --- Auth ---
+    auth_mode: str = Field(
+        default="none",
+        alias="AT_AUTH_MODE",
+        description="'oauth2-proxy' or 'none'",
+    )
+
+    # --- Poller ---
+    poller_interval_hours: int = Field(default=8, alias="AT_POLLER_INTERVAL_HOURS")
+    poller_lookback_hours: int = Field(default=12, alias="AT_POLLER_LOOKBACK_HOURS")
+
+    # --- Timeouts (seconds) ---
+    pull_timeout: float = Field(default=30.0, alias="AT_PULL_TIMEOUT_SECONDS")
+    health_check_timeout: float = Field(default=10.0, alias="AT_HEALTH_CHECK_TIMEOUT_SECONDS")
+
+    # --- Retention ---
+    retention_months: int = Field(default=12, alias="AT_RETENTION_MONTHS")
+    purge_cron: str = Field(default="0 3 1 * *", alias="AT_PURGE_CRON")
+
+    # --- Paths ---
+    data_dir: str = Field(default="/data", alias="AT_DATA_DIR")
+    config_dir: str = Field(default="/app/config", alias="AT_CONFIG_DIR")
+
+    model_config = {"populate_by_name": True}
+
+    @property
+    def effective_database_url(self) -> str:
+        """Return SQLite URL if DATABASE_URL is empty."""
+        if self.database_url:
+            return self.database_url
+        db_path = Path(self.data_dir) / "alerts.db"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        return f"sqlite:///{db_path}"
+
+    @property
+    def is_sqlite(self) -> bool:
+        return self.effective_database_url.startswith("sqlite")
+
+
+def load_clusters_config(config_dir: str) -> list[dict]:
+    """Load cluster definitions from clusters.yaml."""
+    config_path = Path(config_dir) / "clusters.yaml"
+    if not config_path.exists():
+        return []
+    with open(config_path, encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    if not data or "clusters" not in data:
+        return []
+    return data["clusters"]
+
+
+# Singleton
+settings = Settings()

@@ -1,0 +1,7 @@
+clusters:
+  - name: lab-cluster
+    prometheus_url: http://fake-prometheus:9090
+    alertmanager_url: http://fake-alertmanager:9093
+    interval_hours: 1
+    pull_info: false
+    instance_label: instance

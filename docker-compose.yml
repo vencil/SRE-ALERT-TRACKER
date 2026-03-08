@@ -1,0 +1,46 @@
+version: "3.9"
+
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      AT_AUTH_MODE: "none"
+      AT_DATABASE_URL: ""
+      AT_POLLER_INTERVAL_HOURS: "1"
+      AT_POLLER_LOOKBACK_HOURS: "2"
+      AT_DATA_DIR: "/data"
+      AT_CONFIG_DIR: "/app/config"
+    volumes:
+      - ./data:/data
+      - ./config:/app/config
+    depends_on:
+      - fake-prometheus
+      - fake-alertmanager
+
+  fake-prometheus:
+    image: prom/prometheus:v2.51.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./lab/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./lab/alert-rules.yml:/etc/prometheus/rules/alert-rules.yml:ro
+
+  fake-alertmanager:
+    image: prom/alertmanager:v0.27.0
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./lab/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+
+  # Optional: MariaDB for testing external DB mode
+  mariadb:
+    image: mariadb:11.2
+    ports:
+      - "3306:3306"
+    environment:
+      MARIADB_ROOT_PASSWORD: devpass
+      MARIADB_DATABASE: alert_tracker
+    profiles:
+      - mariadb

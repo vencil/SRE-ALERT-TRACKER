@@ -1,1 +1,169 @@
-# SRE-ALERT-TRACKER
+# SRE Alert Tracking System
+
+> 團隊內部值班 Alert 追蹤紀錄系統 v1.0.0 — 自動拉取多座 K8s cluster 的 alert，值班人員填寫處理紀錄，週報管理、趨勢分析、匯出。
+
+---
+
+## 痛點與解決方案
+
+### Alert 風暴下的人工紀錄負擔
+
+**❌ 現狀痛點：**
+Alert 風暴發生時，值班人員一邊救火一邊手動統計 alert 發生紀錄。事後依賴大腦回憶填寫報表，漏填、錯填頻繁發生。跨 cluster 的 alert 散落各 Alertmanager，無統一視圖。處理紀錄無結構化格式，難以回溯改善。
+
+**✅ 本系統方案：**
+自動從每座 cluster 的 Alertmanager + Prometheus 定時拉取 alert，fingerprint 去重收斂，按週/日自動分群。值班人員只需填寫「現象/影響/處理作法」三個欄位。自訂 label 標記系列性問題，跨週查詢追蹤改善進度。
+
+### 多 Cluster 資料分散
+
+**❌ 現狀痛點：**
+多座 Kubernetes cluster 各自有 Prometheus/Alertmanager，查看 alert 需逐一登入各環境。統計時手動彙整，費時且易遺漏。
+
+**✅ 本系統方案：**
+`clusters.yaml` 集中管理所有 cluster endpoint，系統自動拉取並標記 alert 來源。前端統一視圖，按 cluster 篩選。每次拉取自動做 health check，endpoint 異常即時顯示。
+
+---
+
+## 核心功能
+
+| 功能 | 說明 |
+|------|------|
+| **Alert 自動拉取** | 雙引擎：Alertmanager API (當前) + Prometheus query_range (歷史補充)，可設定 4/6/8h 間隔 |
+| **Fingerprint 收斂** | 同週期同 alert 只一筆紀錄，更新次數與最後發生時間 |
+| **黑白名單過濾** | 按 alertname / group / severity 設定 whitelist 或 blacklist |
+| **週報框架** | 每週一自動生成，按日分群，動態 checkbox 任務 |
+| **處理紀錄** | 自動帶入 alert 基本資訊（可逃生門覆寫）+ 人工填寫現象/影響/處理作法 |
+| **自訂 Label** | Autocomplete 標籤系統，管理員可合併標準化 |
+| **歷史查詢** | 按 label / cluster / severity / 周次 / 日期範圍 跨週篩選 |
+| **趨勢儀表板** | 每週 alert 數量折線、Top-N 排行、維護窗口標註 |
+| **匯出** | 瀏覽器列印 PDF + CSV/JSON API 下載（單週或跨週篩選結果） |
+| **Runbook 自動解析** | 從 alert annotations 提取 `runbook_url`，前端直接連結 |
+| **維護窗口** | 手動標註維護期間，統計可排除 |
+| **資料保留** | 半年/一年可選，排程 + 手動 purge |
+
+---
+
+## 架構總覽
+
+```mermaid
+graph LR
+    subgraph CLUSTERS["K8s Clusters (×N)"]
+        AM["Alertmanager<br/>/api/v2/alerts"]
+        PM["Prometheus<br/>query_range(ALERTS)"]
+    end
+
+    subgraph SYSTEM["Alert Tracker (Single Image)"]
+        POLLER["Poller<br/>APScheduler"]
+        API["FastAPI<br/>REST API"]
+        DB["SQLite / MariaDB"]
+        FE["React + Tailwind"]
+    end
+
+    AM --> POLLER
+    PM --> POLLER
+    POLLER --> DB
+    API --> DB
+    FE --> API
+    OAP["oauth2-proxy"] --> API
+```
+
+---
+
+## 技術棧
+
+| 層 | 技術 | 說明 |
+|----|------|------|
+| Frontend | React + TailwindCSS + Vite | 由 FastAPI StaticFiles serve |
+| Backend | Python FastAPI + SQLAlchemy + APScheduler | API-first，自動 OpenAPI 文件 |
+| Database | SQLite (預設) / MariaDB (可選) | `DATABASE_URL` 環境變數切換 |
+| Auth | oauth2-proxy | 讀 `X-Forwarded-User` header |
+| Deploy | 單一 Docker image (multi-stage build) | K8s Deployment + ClusterIP + PVC |
+
+---
+
+## 快速開始
+
+```bash
+# 1. Clone
+git clone <repo-url>
+cd sre-alert-tracker
+
+# 2. Lab 環境一鍵啟動（含 fake Prometheus + Alertmanager）
+docker compose up -d
+
+# 3. 開啟瀏覽器
+# App: http://localhost:8000
+# Fake Prometheus: http://localhost:9090
+# Fake Alertmanager: http://localhost:9093
+
+# 4. (Optional) 加入 MariaDB
+docker compose --profile mariadb up -d
+```
+
+---
+
+## 部署（Kubernetes）
+
+```bash
+# 1. 建立 ConfigMap（Cluster 清單）
+kubectl apply -f k8s/configmap.yaml
+
+# 2. 建立 PVC（SQLite 資料持久化）
+kubectl apply -f k8s/pvc.yaml
+
+# 3. 部署
+kubectl apply -f k8s/deployment.yaml
+kubectl apply -f k8s/service.yaml
+
+# 4. (搭配 oauth2-proxy 的 Ingress)
+kubectl apply -f k8s/ingress.yaml
+```
+
+**環境變數：**
+
+| 變數 | 預設 | 說明 |
+|------|------|------|
+| `AUTH_MODE` | `oauth2-proxy` | `none` 關閉認證 (Lab 用) |
+| `DATABASE_URL` | (空) | 空=SQLite `/data/alerts.db`; `mysql+pymysql://...`=MariaDB |
+| `POLLER_INTERVAL_HOURS` | `8` | 拉取間隔 |
+| `POLLER_LOOKBACK_HOURS` | `12` | 回溯時間窗口 |
+| `RETENTION_MONTHS` | `12` | 資料保留月數 |
+| `PURGE_CRON` | `0 3 1 * *` | Purge 排程 (cron expression) |
+
+---
+
+## 文件導覽
+
+| 文件 | 說明 | 目標讀者 |
+|------|------|---------|
+| [架構設計](docs/architecture-design.md) | 完整架構、資料模型、API 設計、部署配置 | 開發者、AI Agent |
+| [CLAUDE.md](CLAUDE.md) | AI Agent 開發上下文速查 | AI Agent |
+| [CHANGELOG.md](CHANGELOG.md) | 版本變更日誌 | 全體 |
+
+---
+
+## 專案結構
+
+```
+sre-alert-tracker/
+├── backend/                   # FastAPI 後端
+│   ├── models/                # SQLAlchemy ORM (12 tables)
+│   ├── routers/               # API handlers (12 routers)
+│   ├── services/              # Business logic (poller, dedup, filter, export, retention)
+│   ├── middleware/            # Auth middleware (oauth2-proxy / none)
+│   └── schemas/               # Pydantic models
+├── frontend/                  # React + TailwindCSS
+│   └── src/pages/             # 6 pages
+├── config/                    # clusters.yaml 模板
+├── lab/                       # Fake Prometheus + Alertmanager
+├── k8s/                       # K8s manifests
+├── docker-compose.yml
+├── Dockerfile
+└── Makefile
+```
+
+---
+
+## License
+
+MIT
