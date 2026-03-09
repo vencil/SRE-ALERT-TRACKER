@@ -1,37 +1,13 @@
 """Tests for auto-fill from annotations and raw_labels/raw_annotations storage."""
 
-import os
-from datetime import date, datetime
+from datetime import datetime
 
-import pytest
-
-os.environ.setdefault("TESTING", "1")
-
-from models.cluster import Cluster
-from models.daily_section import DailySection
-from models.shift_report import ShiftReport
 from services.dedup import upsert_alert
 
 
-def _create_section(db_session) -> tuple:
-    """Create cluster + report + section for testing."""
-    cluster = Cluster(name="test-c", prometheus_url="http://p:9090", alertmanager_url="http://a:9093")
-    db_session.add(cluster)
-    db_session.flush()
-
-    report = ShiftReport(year=2026, week_number=11)
-    db_session.add(report)
-    db_session.flush()
-
-    section = DailySection(report_id=report.id, section_date=date(2026, 3, 9))
-    db_session.add(section)
-    db_session.flush()
-    return cluster, section
-
-
 class TestAutoFillFromAnnotations:
-    def test_fills_phenomenon_from_summary(self, db_session):
-        cluster, section = _create_section(db_session)
+    def test_fills_phenomenon_from_summary(self, db_session, seed_report_section):
+        cluster, _, section = seed_report_section
         alert = upsert_alert(
             db=db_session, daily_section=section, cluster_id=cluster.id,
             fingerprint="fp1", alert_name="TestAlert", severity="warning",
@@ -42,8 +18,8 @@ class TestAutoFillFromAnnotations:
         assert alert.phenomenon == "High CPU on pod-01"
         assert alert.impact == "Pod is using 95% CPU"
 
-    def test_does_not_overwrite_manual_fields(self, db_session):
-        cluster, section = _create_section(db_session)
+    def test_does_not_overwrite_manual_fields(self, db_session, seed_report_section):
+        cluster, _, section = seed_report_section
         alert = upsert_alert(
             db=db_session, daily_section=section, cluster_id=cluster.id,
             fingerprint="fp2", alert_name="TestAlert2", severity="warning",
@@ -69,8 +45,8 @@ class TestAutoFillFromAnnotations:
         )
         assert alert2.phenomenon == "Manually written"
 
-    def test_no_annotations_leaves_fields_empty(self, db_session):
-        cluster, section = _create_section(db_session)
+    def test_no_annotations_leaves_fields_empty(self, db_session, seed_report_section):
+        cluster, _, section = seed_report_section
         alert = upsert_alert(
             db=db_session, daily_section=section, cluster_id=cluster.id,
             fingerprint="fp3", alert_name="TestAlert3", severity="info",
@@ -83,8 +59,8 @@ class TestAutoFillFromAnnotations:
 
 
 class TestRawLabelsStorage:
-    def test_raw_labels_stored_on_insert(self, db_session):
-        cluster, section = _create_section(db_session)
+    def test_raw_labels_stored_on_insert(self, db_session, seed_report_section):
+        cluster, _, section = seed_report_section
         labels = {"alertname": "TestAlert", "severity": "warning", "namespace": "prod"}
         annotations = {"summary": "test", "runbook_url": "http://wiki/test"}
 
@@ -102,8 +78,8 @@ class TestRawLabelsStorage:
         assert alert.raw_annotations == annotations
         assert alert.raw_labels["namespace"] == "prod"
 
-    def test_raw_data_updated_on_dedup(self, db_session):
-        cluster, section = _create_section(db_session)
+    def test_raw_data_updated_on_dedup(self, db_session, seed_report_section):
+        cluster, _, section = seed_report_section
         # Insert
         upsert_alert(
             db=db_session, daily_section=section, cluster_id=cluster.id,

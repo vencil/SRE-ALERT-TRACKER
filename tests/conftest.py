@@ -28,6 +28,10 @@ from sqlalchemy.pool import StaticPool  # noqa: E402
 from database import Base, get_db  # noqa: E402
 from main import app  # noqa: E402
 
+from models.cluster import Cluster  # noqa: E402
+from models.daily_section import DailySection  # noqa: E402
+from models.shift_report import ShiftReport  # noqa: E402
+
 
 @pytest.fixture(scope="function")
 def db_session():
@@ -72,3 +76,34 @@ def client(db_session):
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
+
+
+# --- Shared test data fixtures ---
+
+@pytest.fixture()
+def seed_cluster(db_session):
+    """Create a test cluster and return it."""
+    cluster = Cluster(
+        name="test-cluster",
+        prometheus_url="http://prom:9090",
+        alertmanager_url="http://am:9093",
+    )
+    db_session.add(cluster)
+    db_session.flush()
+    return cluster
+
+
+@pytest.fixture()
+def seed_report_section(db_session, seed_cluster):
+    """Create cluster + report + daily section; return (cluster, report, section)."""
+    from datetime import date
+
+    report = ShiftReport(year=2026, week_number=11)
+    db_session.add(report)
+    db_session.flush()
+
+    section = DailySection(report_id=report.id, section_date=date(2026, 3, 9))
+    db_session.add(section)
+    db_session.flush()
+
+    return seed_cluster, report, section

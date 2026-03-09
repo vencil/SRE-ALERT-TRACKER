@@ -4,7 +4,7 @@ import json as _json
 from datetime import datetime
 
 from sqlalchemy import (
-    Boolean, Column, DateTime, ForeignKey, Integer, String, Table, Text, func,
+    Boolean, Column, DateTime, ForeignKey, Integer, String, Table, Text, UniqueConstraint, func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
@@ -43,6 +43,9 @@ alert_record_labels = Table(
 
 class AlertRecord(Base):
     __tablename__ = "alert_records"
+    __table_args__ = (
+        UniqueConstraint("daily_section_id", "fingerprint", name="uq_section_fingerprint"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     daily_section_id: Mapped[int] = mapped_column(

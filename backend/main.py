@@ -3,6 +3,7 @@
 import logging
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -163,6 +164,7 @@ def _setup_scheduler():
         _poll_job,
         "interval",
         hours=settings.poller_interval_hours,
+        next_run_time=datetime.now(display_tz),  # Fire immediately on startup
         id="alert_poller",
         replace_existing=True,
     )
@@ -179,14 +181,27 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS (Lab 環境允許所有來源)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS — Lab 模式允許所有來源 (不帶 credentials)；
+# Production 應透過 AT_CORS_ORIGINS 環境變數指定明確來源。
+_cors_origins = os.environ.get("AT_CORS_ORIGINS", "").split(",") if os.environ.get("AT_CORS_ORIGINS") else []
+if settings.auth_mode == "none":
+    # Lab / development: allow all origins, no credentials
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    # Production: explicit origins with credentials (for oauth2-proxy cookies)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins or ["*"],
+        allow_credentials=bool(_cors_origins),
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # Auth middleware
 from middleware.auth import AuthMiddleware  # noqa: E402

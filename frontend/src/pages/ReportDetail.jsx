@@ -16,6 +16,7 @@ export default function ReportDetail() {
   const [error, setError] = useState(null);
   const [expandedSections, setExpandedSections] = useState(new Set());
   const [tasks, setTasks] = useState([]);
+  const [alertsTruncated, setAlertsTruncated] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -28,13 +29,16 @@ export default function ReportDetail() {
       setExpandedSections(ids);
 
       // Load alerts filtered by this report's year/week (not all alerts)
+      const ALERT_LIMIT = 500;
       const alerts = await fetchAlerts({
         year: r.year,
         week: r.week_number,
-        limit: 500,
+        limit: ALERT_LIMIT,
       });
+      const alertList = alerts.alerts ?? [];
+      setAlertsTruncated(alertList.length >= ALERT_LIMIT);
       const grouped = {};
-      for (const a of (alerts.alerts ?? [])) {
+      for (const a of alertList) {
         const sid = a.daily_section_id;
         if (!grouped[sid]) grouped[sid] = [];
         grouped[sid].push(a);
@@ -151,6 +155,13 @@ export default function ReportDetail() {
               </label>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Truncation warning */}
+      {alertsTruncated && (
+        <div className="bg-amber-50 border border-amber-300 text-amber-800 text-sm rounded-lg px-4 py-3 mb-4">
+          告警數量已達顯示上限 (500 筆)，部分告警未顯示。請透過匯出 CSV 查看完整紀錄，或前往歷史查詢縮小範圍。
         </div>
       )}
 

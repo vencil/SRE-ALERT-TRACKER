@@ -69,12 +69,15 @@ class TestAlertCardVisibility:
 class TestDebounceAutoSave:
     """Test: fill textarea → debounce triggers save → reload persists."""
 
-    def test_phenomenon_auto_save(self, report_page: Page):
-        """Type in phenomenon textarea → 'saved' indicator → reload persists."""
-        test_text = "E2E test: high CPU on node-3"
-        textarea = report_page.get_by_placeholder("填寫現象...").first
+    @pytest.mark.parametrize("placeholder, test_text", [
+        ("填寫現象...", "E2E test: high CPU on node-3"),
+        ("填寫影響...", "E2E test: service degradation"),
+        ("填寫處理作法...", "E2E test: scaled up pods"),
+    ])
+    def test_textarea_auto_save(self, report_page: Page, placeholder: str, test_text: str):
+        """Type in textarea → 'saved' indicator → reload persists."""
+        textarea = report_page.get_by_placeholder(placeholder).first
 
-        # Clear and type
         textarea.fill(test_text)
 
         # Wait for debounce (800ms) + API round-trip → "saved" indicator
@@ -86,39 +89,5 @@ class TestDebounceAutoSave:
         report_page.locator(".alert-card").first.wait_for(
             state="visible", timeout=10000
         )
-        textarea_after = report_page.get_by_placeholder("填寫現象...").first
-        expect(textarea_after).to_have_value(test_text)
-
-    def test_impact_auto_save(self, report_page: Page):
-        """Type in impact textarea → saved → reload persists."""
-        test_text = "E2E test: service degradation"
-        textarea = report_page.get_by_placeholder("填寫影響...").first
-
-        textarea.fill(test_text)
-
-        saved = report_page.locator(".save-indicator").first
-        expect(saved).to_have_text("saved", timeout=5000)
-
-        report_page.reload()
-        report_page.locator(".alert-card").first.wait_for(
-            state="visible", timeout=10000
-        )
-        textarea_after = report_page.get_by_placeholder("填寫影響...").first
-        expect(textarea_after).to_have_value(test_text)
-
-    def test_action_taken_auto_save(self, report_page: Page):
-        """Type in action_taken textarea → saved → reload persists."""
-        test_text = "E2E test: scaled up pods"
-        textarea = report_page.get_by_placeholder("填寫處理作法...").first
-
-        textarea.fill(test_text)
-
-        saved = report_page.locator(".save-indicator").first
-        expect(saved).to_have_text("saved", timeout=5000)
-
-        report_page.reload()
-        report_page.locator(".alert-card").first.wait_for(
-            state="visible", timeout=10000
-        )
-        textarea_after = report_page.get_by_placeholder("填寫處理作法...").first
+        textarea_after = report_page.get_by_placeholder(placeholder).first
         expect(textarea_after).to_have_value(test_text)
