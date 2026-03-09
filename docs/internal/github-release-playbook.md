@@ -87,7 +87,9 @@ Tag push 自動觸發 `.github/workflows/release.yaml`：
 
 Image tags：`<version>`（如 `1.0.0`）、`<major>.<minor>`（如 `1.0`）、`<sha>`。
 
-### Step 4: 手動建立 GitHub Release（Windows MCP PowerShell）
+### Step 4: 手動建立 GitHub Release（備用，CI 已自動處理）
+
+> **注意：** Step 3 的 CI workflow 已包含自動建立 GitHub Release（`softprops/action-gh-release`）。以下僅在 CI 失敗或需手動修改 Release 時使用。
 
 ```powershell
 $token = "<TOKEN>"
@@ -139,3 +141,7 @@ Write-Host "ID: $($r.id)  TAG: $($r.tag_name)  URL: $($r.html_url)"
 | 10 | Windows MCP 長 body timeout | Desktop Commander `write_file` 暫存 → PowerShell `Get-Content -Raw` 讀入 |
 | 11 | Cowork VM 首次 commit 無 user identity | `git config --global user.email/name` |
 | 12 | Release body 先短後長 | 先 POST 建立（短 body），再 PATCH 更新完整 body（避免一次性 JSON 問題） |
+| 13 | 前端 dependency 未列入 package.json | `import` 的 npm 套件（如 recharts）必須在 package.json `dependencies` 中；dev 有 node_modules 時可能不報錯，CI `npm ci` 必定失敗 |
+| 14 | `npm ci` package-lock.json 不同步 | 手動改 package.json 後 lock file 不一致 → 從乾淨目錄重新生成：`mkdir fresh && cp package.json fresh/ && cd fresh && npm install && cp package-lock.json ../ ` |
+| 15 | CI re-trigger 需 retag | tag 已存在的 commit 不會重跑 CI → `git push origin :refs/tags/v1.x.x` 刪遠端 tag → `git tag -d v1.x.x && git tag v1.x.x` 本地 retag → push |
+| 16 | Git lock files 阻擋操作 | Cowork VM 無法 `rm` 掛載路徑的 lock files → Windows batch `del /f ".git\index.lock" ".git\HEAD.lock" ".git\refs\stale.lock"` |

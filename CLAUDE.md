@@ -40,6 +40,7 @@ VERSION                # 版號單一來源
 config/clusters.yaml   # Cluster endpoint 清單 (ConfigMap)
 lab/                   # Fake Prometheus + Alertmanager
 k8s/                   # deployment, service, pvc, configmap, ingress
+.github/workflows/     # CI: release.yaml (test → build → release)
 ```
 
 ## 資料模型
@@ -122,6 +123,16 @@ make release V=1.2.0        # bump + git commit + git tag v1.2.0
 bump 會自動同步：VERSION → Dockerfile LABEL → README.md → CLAUDE.md。
 `make release` = bump → commit → tag（tag 永遠指向含新版號的 commit）。
 CHANGELOG.md 需手動更新 release notes（在 `make release` 前完成）。
+
+## CI/CD
+
+`.github/workflows/release.yaml` — push `v*` tag 自動觸發：
+
+1. **test** — Python 3.12 + `pytest`（排除 e2e）
+2. **build** — Docker multi-stage build → Push to GHCR (`ghcr.io/vencil/sre-alert-tracker:<version>`)
+3. **release** — 從 CHANGELOG.md 擷取 release notes → 建立 GitHub Release
+
+Image tags：`<version>`、`<major>.<minor>`、`<sha>`。
 
 ## Makefile
 
