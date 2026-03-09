@@ -1,4 +1,4 @@
-"""Export router — CSV/JSON download endpoints for reports and alerts."""
+"""Export router — CSV/JSON/Markdown download endpoints for reports and alerts."""
 
 from typing import Optional
 
@@ -11,7 +11,12 @@ from models.alert_record import AlertRecord
 from models.daily_section import DailySection
 from models.label import Label
 from models.shift_report import ShiftReport
-from services.export_service import export_alerts_csv, export_report_csv, export_report_json
+from services.export_service import (
+    export_alerts_csv,
+    export_report_csv,
+    export_report_json,
+    export_report_markdown,
+)
 
 router = APIRouter(prefix="/api/export", tags=["Export"])
 
@@ -19,10 +24,10 @@ router = APIRouter(prefix="/api/export", tags=["Export"])
 @router.get("/report/{report_id}")
 def export_report(
     report_id: int,
-    format: str = Query("csv", pattern="^(csv|json)$"),
+    format: str = Query("csv", pattern="^(csv|json|md)$"),
     db: Session = Depends(get_db),
 ):
-    """Export a single report's alerts as CSV or JSON."""
+    """Export a single report's alerts as CSV, JSON, or Markdown."""
     report = db.query(ShiftReport).filter(ShiftReport.id == report_id).first()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
@@ -35,6 +40,13 @@ def export_report(
             content=content,
             media_type="application/json",
             headers={"Content-Disposition": f'attachment; filename="{filename}.json"'},
+        )
+    elif format == "md":
+        content = export_report_markdown(db, report_id)
+        return Response(
+            content=content,
+            media_type="text/markdown; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}.md"'},
         )
     else:
         content = export_report_csv(db, report_id)

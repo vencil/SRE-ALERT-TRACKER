@@ -30,16 +30,23 @@ graph TD
         CN_PM["Cluster-N<br/>Prometheus"]
     end
 
-    subgraph APP["Alert Tracking System (Single Image)"]
-        POLLER["Alert Poller<br/>Scheduler (APScheduler)<br/>4/6/8h interval"]
-        API["FastAPI Backend<br/>REST API + StaticFiles"]
-        DB["SQLite / MariaDB<br/>(Abstraction Layer)"]
-        FE["React Frontend<br/>TailwindCSS"]
+    USER["Browser<br/>值班人員"]
+
+    subgraph INGRESS["Kubernetes Ingress Layer"]
+        NGX["nginx-ingress<br/>TLS termination"]
+        OAP["oauth2-proxy<br/>OIDC / GitHub OAuth"]
     end
 
-    subgraph AUTH["Authentication"]
-        OAP["oauth2-proxy<br/>X-Forwarded-User"]
+    subgraph APP["Alert Tracking System (Single Image, ClusterIP)"]
+        POLLER["Alert Poller<br/>Scheduler (APScheduler)<br/>4/6/8h interval"]
+        API["FastAPI Backend<br/>REST API + StaticFiles<br/>(React SPA)"]
+        DB["SQLite / MariaDB<br/>(Abstraction Layer)"]
     end
+
+    USER -->|"HTTPS"| NGX
+    NGX -->|"auth-url check"| OAP
+    OAP -->|"X-Forwarded-User<br/>X-Forwarded-Email"| NGX
+    NGX -->|"Authenticated<br/>request + headers"| API
 
     C1_AM -->|"/api/v2/alerts<br/>主要來源"| POLLER
     C1_PM -->|"query_range(ALERTS)<br/>歷史補充"| POLLER
@@ -49,16 +56,18 @@ graph TD
     CN_PM --> POLLER
     POLLER -->|"Dedup by fingerprint<br/>Filter + Write"| DB
     API --> DB
-    FE -->|"REST API"| API
-    OAP -->|"Header injection"| API
 
     classDef cluster fill:#e1f5fe,stroke:#01579b,stroke-width:2px
     classDef app fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
-    classDef auth fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef ingress fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef user fill:#fce4ec,stroke:#c62828,stroke-width:2px
     class C1_AM,C1_PM,C2_AM,C2_PM,CN_AM,CN_PM cluster
-    class POLLER,API,DB,FE app
-    class OAP auth
+    class POLLER,API,DB app
+    class NGX,OAP ingress
+    class USER user
 ```
+
+> **安全要點：** oauth2-proxy 位於 Ingress 層，保護所有進入 Service 的流量（包括 React 靜態頁面與 API）。App Service 為 `ClusterIP`，無法從 Ingress 以外直接存取。
 
 ### 2.2 元件架構（單一 Image 內部）
 
@@ -135,6 +144,8 @@ erDiagram
         string instance
         string source_group
         string runbook_url
+        json raw_labels
+        json raw_annotations
         text phenomenon
         text impact
         text action_taken
@@ -220,9 +231,9 @@ erDiagram
 | Table | 用途 | 關鍵設計 |
 |-------|------|----------|
 | `clusters` | 監控來源清單 | 啟動時從 `clusters.yaml` 同步；每次拉取做 health check 更新 `status` |
-| `shift_reports` | 週報框架 | 每週一 00:00 自動生成（APScheduler）；`operator_name` 可每日換人 |
+| `shift_reports` | 週報框架 | 每週一 00:00（display timezone）自動生成（APScheduler）；`operator_name` 可每日換人 |
 | `daily_sections` | 每日分群 | 自動在拉取時建立；`operator_name` 繼承 report 但可覆寫（臨時換班） |
-| `alert_records` | Alert 紀錄核心 | `fingerprint` 為 dedup key；同週期內相同 fingerprint 只更新計數 |
+| `alert_records` | Alert 紀錄核心 | `fingerprint` 為 dedup key；同週期內相同 fingerprint 只更新計數；`raw_labels`/`raw_annotations` 保留完整 Prometheus 原始資料；INSERT 時自動映射 `annotations.summary` → `phenomenon`、`annotations.description` → `impact` |
 | `labels` | 自訂標籤 | 管理員可合併/標準化；前端 autocomplete |
 | `weekly_tasks` | 動態值班任務 | 管理員設定，綁定至每週報表；checkbox 勾選 |
 | `alert_filter_rules` | 黑白名單 | `rule_type`: `whitelist`/`blacklist`；`filter_field`: `alertname`/`group`/`severity` |
@@ -283,11 +294,12 @@ API-first 設計，所有前端操作均透過 REST API。FastAPI 自動生成 O
 | **Filters** | GET | `/api/filters` | 列出黑白名單規則 |
 | | POST | `/api/filters` | 建立過濾規則 |
 | | DELETE | `/api/filters/{id}` | 刪除過濾規則 |
-| **Maintenance** | GET | `/api/maintenance-windows` | 列出維護窗口 |
-| | POST | `/api/maintenance-windows` | 建立維護窗口 |
-| | DELETE | `/api/maintenance-windows/{id}` | 刪除維護窗口 |
-| **Export** | GET | `/api/export/report/{id}` | 匯出單週報表（CSV/JSON） |
-| | GET | `/api/export/alerts` | 匯出篩選結果（CSV/JSON） |
+| **Maintenance** | GET | `/api/maintenance` | 列出維護窗口 |
+| | POST | `/api/maintenance` | 建立維護窗口 |
+| | PATCH | `/api/maintenance/{id}` | 更新維護窗口 |
+| | DELETE | `/api/maintenance/{id}` | 刪除維護窗口 |
+| **Export** | GET | `/api/export/report/{id}?format=csv\|json\|md` | 匯出單週報表 |
+| | GET | `/api/export/alerts` | 匯出篩選結果（CSV） |
 | **Dashboard** | GET | `/api/dashboard/trends` | Alert 趨勢統計（per-cluster, per-week） |
 | | GET | `/api/dashboard/top-alerts` | Top-N 最頻繁 alert |
 | **Poller** | GET | `/api/poller/status` | 拉取排程狀態 |
@@ -426,8 +438,10 @@ filter_rules 表：
 | Cluster | `clusters.yaml` 對應 | 唯讀 | 同上 |
 | Instance | Alertmanager labels/annotations | 唯讀 | 同上 |
 | Runbook URL | Alertmanager `runbook_url` annotation | 唯讀（超連結） | 同上 |
-| 現象 | 人工填寫 | 空白 textarea | 直接編輯 |
-| 影響 | 人工填寫 | 空白 textarea | 直接編輯 |
+| Raw Labels | Alertmanager/Prometheus 全部 labels | 唯讀 JSON (collapsible) | — |
+| Raw Annotations | Alertmanager annotations | 唯讀 JSON (collapsible) | — |
+| 現象 | 自動填入 `annotations.summary`；可人工覆寫 | textarea（有預填值時顯示灰底） | 直接編輯 |
+| 影響 | 自動填入 `annotations.description`；可人工覆寫 | textarea（有預填值時顯示灰底） | 直接編輯 |
 | 處理作法 | 人工填寫 | 空白 textarea | 直接編輯 |
 | Labels | 人工選擇/建立 | 空白 tag input (autocomplete) | 直接操作 |
 
@@ -441,15 +455,18 @@ filter_rules 表：
 
 前端提供「列印版」按鈕，切換至 `@media print` 優化的 CSS layout：隱藏導覽列、展開所有摺疊區段、適合 A4 橫向。使用者直接 `Ctrl+P` 匯出。零後端開發成本。
 
-### 7.2 CSV/Excel（後端 API）
+### 7.2 CSV/JSON/Markdown（後端 API）
 
 | Endpoint | 範圍 | 格式 |
 |----------|------|------|
 | `GET /api/export/report/{id}?format=csv` | 單週報表 | CSV |
 | `GET /api/export/report/{id}?format=json` | 單週報表 | JSON |
+| `GET /api/export/report/{id}?format=md` | 單週報表 | Markdown |
 | `GET /api/export/alerts?label=X&week=Y&format=csv` | 篩選結果（跨週） | CSV |
 
 CSV 欄位：`week, date, alert_name, severity, cluster, instance, occurrence_count, first_firing_at, last_firing_at, phenomenon, impact, action_taken, labels`
+
+Markdown 格式：以週報為單位，按日期分群，每個 alert 含 severity icon、metadata、labels、處理紀錄。時間戳自動轉換為 `AT_DISPLAY_TIMEZONE` 顯示。
 
 ---
 
@@ -506,6 +523,7 @@ K8s manifests 位於 `k8s/` 目錄：
 | `AT_DATABASE_URL` | (空) | 空=SQLite; `mysql+pymysql://...`=MariaDB |
 | `AT_DATA_DIR` | `/data` | SQLite 資料目錄 |
 | `AT_CONFIG_DIR` | `/app/config` | clusters.yaml 目錄 |
+| `AT_DISPLAY_TIMEZONE` | `Asia/Taipei` | IANA 時區名稱，影響介面顯示與週報交接日期（DB 一律存 UTC） |
 | `AT_POLLER_INTERVAL_HOURS` | `8` | 拉取間隔 |
 | `AT_POLLER_LOOKBACK_HOURS` | `12` | 回溯窗口 |
 

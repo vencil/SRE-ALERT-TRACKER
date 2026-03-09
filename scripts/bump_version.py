@@ -44,6 +44,11 @@ TARGETS = [
         r"(System v)[0-9]+\.[0-9]+\.[0-9]+",
         "System v{v}",
     ),
+    (
+        "docs/architecture-design.md",
+        r"(\*\*版本：\*\* v)[0-9]+\.[0-9]+\.[0-9]+",
+        "**版本：** v{v}",
+    ),
 ]
 
 _VER_RE = re.compile(r"^\d+\.\d+\.\d+$")

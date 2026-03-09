@@ -121,7 +121,10 @@ def _setup_scheduler():
     from services.alert_poller import poll_all_clusters
     from services.report_generator import generate_current_week_report
 
-    # Weekly report generation — every Monday at 00:00 (sync job)
+    from services.timezone_utils import get_display_tz
+    display_tz = get_display_tz()
+
+    # Weekly report generation — every Monday at 00:00 in display timezone
     def _generate_report_job():
         db = SessionLocal()
         try:
@@ -137,6 +140,7 @@ def _setup_scheduler():
         day_of_week="mon",
         hour=0,
         minute=0,
+        timezone=display_tz,
         id="weekly_report_gen",
         replace_existing=True,
     )
@@ -236,6 +240,7 @@ def current_user(request: Request):
         "user": getattr(request.state, "user", "anonymous"),
         "email": getattr(request.state, "email", ""),
         "auth_mode": settings.auth_mode,
+        "display_timezone": settings.display_timezone,
     }
 
 

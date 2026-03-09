@@ -1,7 +1,7 @@
 """AlertRecord Pydantic schemas."""
 
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -18,6 +18,8 @@ class AlertOut(BaseModel):
     instance: Optional[str] = None
     source_group: Optional[str] = None
     runbook_url: Optional[str] = None
+    raw_labels: Optional[dict[str, Any]] = None
+    raw_annotations: Optional[dict[str, Any]] = None
     phenomenon: Optional[str] = None
     impact: Optional[str] = None
     action_taken: Optional[str] = None

@@ -55,7 +55,10 @@ def seed_test_data(data: SeedRequest, db: Session = Depends(get_db)):
 
     # Resolve target date
     if data.target_date:
-        target = date.fromisoformat(data.target_date)
+        try:
+            target = date.fromisoformat(data.target_date)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid date format: {e}") from e
     elif data.year and data.week_number:
         # Use Monday of the specified week
         target = date.fromisocalendar(data.year, data.week_number, 1)

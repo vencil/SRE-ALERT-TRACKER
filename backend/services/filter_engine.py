@@ -2,8 +2,6 @@
 
 import fnmatch
 import logging
-from typing import Any
-
 from sqlalchemy.orm import Session
 
 from models.filter_rule import AlertFilterRule

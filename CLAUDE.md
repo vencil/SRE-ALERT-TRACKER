@@ -13,7 +13,9 @@ SRE Alert Tracking System v1.0.0 — 團隊值班 alert 追蹤紀錄表。自動
 | Alert 拉取 | Alertmanager API (主) + Prometheus query_range (補歷史)，APScheduler 定時觸發 |
 | Dedup | fingerprint 為 unique key，同週期同 fingerprint 只更新 occurrence_count |
 | 過濾 | Whitelist/Blacklist on alertname/group/severity |
-| 週報框架 | 每週一自動建立 shift_report + 7 daily_sections |
+| 週報框架 | 每週一自動建立 shift_report + 7 daily_sections（display timezone 基準） |
+| 時區 | DB 存 UTC；`AT_DISPLAY_TIMEZONE=Asia/Taipei` 控制介面顯示與交接日期 |
+| Annotation 映射 | Poller 自動將 `annotations.summary` → `phenomenon`、`description` → `impact` |
 | 認證 | `AT_AUTH_MODE=oauth2-proxy` → `X-Forwarded-User`；`none` = Lab |
 
 ## 目錄結構
@@ -26,14 +28,14 @@ backend/
   alembic/             # DB migration scripts (env.py + versions/)
   models/              # 10 files, 12 tables (含 association tables)
   routers/             # 12 files, 13 routers (含 test_seed Lab-only)
-  services/            # 7 files (alert_poller, dedup, filter_engine, report_generator, cluster_health, export_service, retention_manager)
+  services/            # 8 files (alert_poller, dedup, filter_engine, report_generator, cluster_health, export_service, retention_manager, timezone_utils)
   middleware/auth.py   # Auth middleware
   schemas/             # 8 files, Pydantic models
 frontend/
   src/pages/           # 6 pages (ReportList, ReportDetail, AlertDetail, Search, Dashboard, Settings)
   src/components/      # 7 components (AlertCard, ErrorBoundary, LabelTagInput, LabelTag, SeverityBadge, ExportButton, Navbar)
   src/api/client.js    # Axios API wrapper
-tests/                 # 16 test files, 112 passed
+tests/                 # 19 test files, 134 passed
 tests/e2e/             # Playwright E2E 瀏覽器測試
 scripts/bump_version.py # 版號管理工具
 VERSION                # 版號單一來源
@@ -50,7 +52,7 @@ k8s/                   # deployment, service, pvc, configmap, ingress
 | clusters | name (UK), prometheus_url, alertmanager_url, status | → alert_records |
 | shift_reports | year, week_number, operator_name | → daily_sections, ↔ weekly_tasks |
 | daily_sections | report_id (FK), section_date | → alert_records |
-| alert_records | fingerprint, alert_name, severity, cluster_id, phenomenon, impact, action_taken, occurrence_count | ↔ labels (M:N) |
+| alert_records | fingerprint, alert_name, severity, cluster_id, raw_labels (JSON), raw_annotations (JSON), phenomenon, impact, action_taken, occurrence_count | ↔ labels (M:N) |
 | labels | name (UK), is_active | ↔ alert_records |
 | weekly_tasks | title, is_active, sort_order | ↔ shift_reports (via report_task_assignments) |
 | alert_filter_rules | rule_type, filter_field, filter_value | — |
@@ -70,7 +72,7 @@ k8s/                   # deployment, service, pvc, configmap, ingress
 | Filters | `GET/POST /api/filters`, `DELETE /api/filters/{id}` (204) |
 | Poller | `GET /api/poller/status`, `POST /api/poller/trigger` |
 | Tasks | `GET/POST/PATCH /api/tasks`, `PATCH /api/reports/{id}/tasks/{task_id}` |
-| Export | `GET /api/export/report/{id}`, `GET /api/export/alerts` |
+| Export | `GET /api/export/report/{id}?format=csv\|json\|md`, `GET /api/export/alerts` |
 | Dashboard | `GET /api/dashboard/{trends,top-alerts,severity-distribution}` |
 | Admin | `POST /api/admin/purge`, `GET/PATCH /api/admin/retention` |
 | Maintenance | `GET/POST/PATCH/DELETE /api/maintenance` |

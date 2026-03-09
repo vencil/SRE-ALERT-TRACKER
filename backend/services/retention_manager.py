@@ -1,8 +1,10 @@
 """Retention manager — purges old data based on retention policy."""
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 
+from dateutil.relativedelta import relativedelta
+from sqlalchemy import func as sa_func
 from sqlalchemy.orm import Session
 
 from models.alert_record import AlertRecord
@@ -32,17 +34,15 @@ def purge_old_data(db: Session, retention_months: int | None = None) -> dict:
     config = get_retention_config(db)
     months = retention_months if retention_months is not None else config.retention_months
 
-    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=months * 30)
-    logger.info("Purging data older than %s (%d months)", cutoff.isoformat(), months)
+    cutoff_date = date.today() - relativedelta(months=months)
+    logger.info("Purging data older than %s (%d months)", cutoff_date.isoformat(), months)
 
-    # Find old reports by checking their latest section_date
+    # Find old reports where the latest section_date is before cutoff
     old_reports = (
         db.query(ShiftReport)
         .join(DailySection, DailySection.report_id == ShiftReport.id)
         .group_by(ShiftReport.id)
-        .having(db.query(DailySection.section_date).correlate(ShiftReport).order_by(
-            DailySection.section_date.desc()
-        ).limit(1).scalar_subquery() < cutoff.date())
+        .having(sa_func.max(DailySection.section_date) < cutoff_date)
         .all()
     )
 

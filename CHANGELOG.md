@@ -2,6 +2,41 @@
 
 All notable changes to the **SRE Alert Tracking System** will be documented in this file.
 
+## [v1.1.0] — 2026-03-10
+
+### 新增功能
+
+- **時區支援：** 環境變數 `AT_DISPLAY_TIMEZONE`（預設 `Asia/Taipei`），影響介面時間戳顯示與週報交接日期區間。DB 一律儲存 UTC，啟動時驗證 IANA 時區名稱
+- **Markdown 匯出：** `GET /api/export/report/{id}?format=md` 新增 Markdown 格式輸出，含 severity icon、時區轉換時間戳、alert 統計
+- **Raw Labels / Annotations 儲存：** alert_records 新增 `raw_labels`、`raw_annotations` JSON 欄位，保留 Alertmanager 完整原始資料供進階查詢
+- **Annotation 自動映射：** Poller 自動將 `annotations.summary` → `phenomenon`、`annotations.description` → `impact`，減少人工填寫負擔。已手動編輯欄位不被覆蓋
+
+### 改進
+
+- **Retention manager：** 月數計算從 `timedelta(days=N*30)` 改為 `dateutil.relativedelta`，消除 2 月誤差。Purge 查詢改用 `MAX()` 聚合取代 correlated subquery
+- **Config 驗證：** `AT_DISPLAY_TIMEZONE` 啟動時透過 `ZoneInfo` 驗證，無效時區名稱立即報錯
+- **timezone_utils 集中化：** `utc_now()`、`to_display_tz()`、`get_display_tz()` 等工具統一時區處理邏輯，取代散落各處的手動轉換
+- **test_seed 輸入驗證：** `target_date` 格式錯誤回傳 400 而非 500
+
+### 架構圖修正
+
+- oauth2-proxy 定位改為 Ingress 層級（nginx annotation），保護全站（靜態檔案 + API），而非僅連接 FastAPI
+
+### 測試
+
+- 新增 19 tests：timezone_utils (10)、markdown export (7)、dedup autofill + raw_labels (5)
+- 全部 134 passed, 3 skipped
+
+### 依賴
+
+- 新增 `python-dateutil==2.9.0.post0`
+
+### Migration
+
+- `a1b2c3d4e5f6_add_raw_labels_annotations`：alert_records 新增 `raw_labels`、`raw_annotations` TEXT 欄位
+
+---
+
 ## [v1.0.0] — 2026-03-08
 
 完整功能實作 + 三輪自檢 + E2E 測試 + K8s 安全加固。

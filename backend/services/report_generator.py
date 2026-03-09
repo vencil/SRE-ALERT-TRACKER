@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from models.daily_section import DailySection
 from models.shift_report import ShiftReport
+from services.timezone_utils import today_in_display_tz
 
 logger = logging.getLogger("alert-tracker.report-gen")
 
@@ -77,7 +78,7 @@ def generate_current_week_report(db: Session) -> ShiftReport:
 
     Called by APScheduler every Monday 00:00.
     """
-    today = date.today()
+    today = today_in_display_tz()
     iso_cal = today.isocalendar()
     year = iso_cal[0]
     week = iso_cal[1]

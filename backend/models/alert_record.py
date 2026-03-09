@@ -1,13 +1,36 @@
 """AlertRecord model — core alert tracking record with M:N label relation."""
 
+import json as _json
 from datetime import datetime
 
 from sqlalchemy import (
     Boolean, Column, DateTime, ForeignKey, Integer, String, Table, Text, func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import TypeDecorator
 
 from database import Base
+
+
+class JSONText(TypeDecorator):
+    """Store JSON as TEXT — portable across SQLite and MariaDB.
+
+    SQLite has no native JSON type; MariaDB's JSON is essentially LONGTEXT.
+    Using Text guarantees compatibility for both backends.
+    """
+
+    impl = Text
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is not None:
+            return _json.dumps(value, ensure_ascii=False)
+        return None
+
+    def process_result_value(self, value, dialect):
+        if value is not None:
+            return _json.loads(value)
+        return None
 
 # Many-to-Many association table
 alert_record_labels = Table(
@@ -34,6 +57,10 @@ class AlertRecord(Base):
     instance: Mapped[str | None] = mapped_column(String(500), nullable=True)
     source_group: Mapped[str | None] = mapped_column(String(255), nullable=True)
     runbook_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Raw Prometheus/Alertmanager data (preserved for dynamic fields)
+    raw_labels: Mapped[dict | None] = mapped_column(JSONText, nullable=True)
+    raw_annotations: Mapped[dict | None] = mapped_column(JSONText, nullable=True)
 
     # Manual fields (filled by on-call operator)
     phenomenon: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -3,9 +3,10 @@
 import os
 from pathlib import Path
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import yaml
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -37,6 +38,23 @@ class Settings(BaseSettings):
     # --- Retention ---
     retention_months: int = Field(default=12, alias="AT_RETENTION_MONTHS")
     purge_cron: str = Field(default="0 3 1 * *", alias="AT_PURGE_CRON")
+
+    # --- Timezone ---
+    display_timezone: str = Field(
+        default="Asia/Taipei",
+        alias="AT_DISPLAY_TIMEZONE",
+        description="IANA timezone for UI display and shift-report week boundaries. DB always stores UTC.",
+    )
+
+    @field_validator("display_timezone")
+    @classmethod
+    def validate_timezone(cls, v: str) -> str:
+        """Validate that the timezone string is a valid IANA timezone."""
+        try:
+            ZoneInfo(v)
+        except (KeyError, Exception) as e:
+            raise ValueError(f"Invalid IANA timezone '{v}': {e}") from e
+        return v
 
     # --- Paths ---
     data_dir: str = Field(default="/data", alias="AT_DATA_DIR")

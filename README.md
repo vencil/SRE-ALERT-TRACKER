@@ -36,7 +36,9 @@ Alert 風暴發生時，值班人員一邊救火一邊手動統計 alert 發生�
 | **自訂 Label** | Autocomplete 標籤系統，管理員可合併標準化 |
 | **歷史查詢** | 按 label / cluster / severity / 周次 / 日期範圍 跨週篩選 |
 | **趨勢儀表板** | 每週 alert 數量折線、Top-N 排行、維護窗口標註 |
-| **匯出** | 瀏覽器列印 PDF + CSV/JSON API 下載（單週或跨週篩選結果） |
+| **匯出** | 瀏覽器列印 PDF + CSV/JSON/Markdown API 下載（單週或跨週篩選結果） |
+| **Annotation 自動映射** | Poller 自動從 annotations 填入「現象」與「影響」，值班人員可覆寫 |
+| **時區支援** | `AT_DISPLAY_TIMEZONE` 設定介面時區，週報交接日期自動對應 |
 | **Runbook 自動解析** | 從 alert annotations 提取 `runbook_url`，前端直接連結 |
 | **維護窗口** | 手動標註維護期間，統計可排除 |
 | **資料保留** | 半年/一年可選，排程 + 手動 purge |
@@ -131,6 +133,7 @@ Deployment 包含：Recreate strategy（避免 SQLite dual-write）、Alembic in
 | `AT_DATABASE_URL` | (空) | 空=SQLite `/data/alerts.db`; `mysql+pymysql://...`=MariaDB |
 | `AT_POLLER_INTERVAL_HOURS` | `8` | 拉取間隔 |
 | `AT_POLLER_LOOKBACK_HOURS` | `12` | 回溯時間窗口 |
+| `AT_DISPLAY_TIMEZONE` | `Asia/Taipei` | IANA 時區，影響介面顯示與週報交接日期 |
 | `AT_DATA_DIR` | `/data` | SQLite 資料目錄 |
 | `AT_CONFIG_DIR` | `/app/config` | clusters.yaml 所在目錄 |
 
@@ -155,14 +158,14 @@ sre-alert-tracker/
 │   ├── alembic/               # DB migration (Alembic)
 │   ├── models/                # SQLAlchemy ORM (12 tables)
 │   ├── routers/               # API handlers (13 routers)
-│   ├── services/              # Business logic (7 services)
+│   ├── services/              # Business logic (8 services)
 │   ├── middleware/            # Auth middleware (oauth2-proxy / none)
 │   └── schemas/               # Pydantic models
 ├── frontend/                  # React + TailwindCSS v4 + Vite
 │   └── src/
 │       ├── pages/             # 6 pages
 │       └── components/        # 7 components (含 ErrorBoundary)
-├── tests/                     # 單元測試 (16 files, 112 passed)
+├── tests/                     # 單元測試 (19 files, 134 passed)
 │   └── e2e/                   # Playwright E2E 瀏覽器測試
 ├── config/                    # clusters.yaml 模板
 ├── lab/                       # Fake Prometheus + Alertmanager

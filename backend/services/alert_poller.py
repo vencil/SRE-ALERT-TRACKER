@@ -19,6 +19,7 @@ from models.shift_report import ShiftReport
 from services.dedup import compute_fingerprint, upsert_alert
 from services.filter_engine import apply_filters, load_active_rules
 from services.report_generator import ensure_report_and_section
+from services.timezone_utils import today_in_display_tz, to_display_tz, utc_now
 
 logger = logging.getLogger("alert-tracker.poller")
 
@@ -64,6 +65,8 @@ async def pull_from_alertmanager(
             "firing_at": _parse_time(alert.get("startsAt")),
             "auto_resolved": status.get("state") == "suppressed",
             "source": "alertmanager",
+            "raw_labels": labels,
+            "raw_annotations": annotations,
         })
 
     logger.info(
@@ -81,7 +84,7 @@ async def pull_from_prometheus(
     Returns list of normalized alert dicts.
     """
     url = f"{cluster.prometheus_url.rstrip('/')}/api/v1/query_range"
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = utc_now()
     start = now - timedelta(hours=lookback_hours)
 
     params = {
@@ -135,6 +138,8 @@ async def pull_from_prometheus(
             "firing_at": last_ts,
             "auto_resolved": False,
             "source": "prometheus",
+            "raw_labels": labels,
+            "raw_annotations": {},  # Prometheus query_range has no annotations
         })
 
     logger.info(
@@ -197,8 +202,10 @@ async def poll_cluster(
     inserted = 0
     updated = 0
     for alert_data in filtered:
-        firing_at = alert_data.get("firing_at") or datetime.now(timezone.utc).replace(tzinfo=None)
-        section = ensure_report_and_section(db, firing_at.date())
+        firing_at = alert_data.get("firing_at") or utc_now()
+        # Convert UTC firing_at to display timezone for correct week/day assignment
+        display_date = to_display_tz(firing_at).date() if firing_at else today_in_display_tz()
+        section = ensure_report_and_section(db, display_date)
 
         result = upsert_alert(
             db=db,
@@ -212,6 +219,8 @@ async def poll_cluster(
             runbook_url=alert_data.get("runbook_url"),
             firing_at=firing_at,
             auto_resolved=alert_data.get("auto_resolved", False),
+            raw_labels=alert_data.get("raw_labels"),
+            raw_annotations=alert_data.get("raw_annotations"),
         )
 
         if result.occurrence_count == 1:
