@@ -77,17 +77,15 @@ echo ---EXITCODE=%ERRORLEVEL%---
 > "C:\Program Files\Git\cmd\git.exe" remote set-url origin "https://github.com/<USER>/<REPO>.git"
 > ```
 
-### Step 3: CI Build（自動，若已設定）
+### Step 3: CI Build（自動）
 
-Tag push 觸發 GitHub Actions workflow（`release.yaml`）：
-- Build Docker image（multi-stage: Node frontend → Python backend）
-- Push to GitHub Container Registry（`ghcr.io/vencil/sre-alert-tracker:<tag>`）
-- 建立 GitHub Release（Draft 或 auto-publish）
+Tag push 自動觸發 `.github/workflows/release.yaml`：
 
-> **CI workflow 尚未建立。** 建立時需包含：
-> - trigger: `push tags: ['v*']`
-> - jobs: build + push Docker image to GHCR
-> - 可選: 自動建立 GitHub Release
+1. **test** — `pytest`（unit tests，排除 e2e）
+2. **build** — Docker multi-stage build → Push to GHCR (`ghcr.io/vencil/sre-alert-tracker:<tag>`)
+3. **release** — 自動從 CHANGELOG.md 擷取 release notes，建立 GitHub Release
+
+Image tags：`<version>`（如 `1.0.0`）、`<major>.<minor>`（如 `1.0`）、`<sha>`。
 
 ### Step 4: 手動建立 GitHub Release（Windows MCP PowerShell）
 

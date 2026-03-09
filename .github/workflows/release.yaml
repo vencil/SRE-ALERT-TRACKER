@@ -1,0 +1,138 @@
+# ============================================================
+# Release Pipeline — Test → Build → Push → GitHub Release
+# ============================================================
+# Trigger: push tag matching v* (e.g., v1.0.0, v1.1.0)
+#
+# Jobs:
+#   1. test     — pytest (unit tests, no playwright)
+#   2. build    — Docker multi-stage build → GHCR
+#   3. release  — Create GitHub Release with CHANGELOG excerpt
+# ============================================================
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+permissions:
+  contents: write       # GitHub Release creation
+  packages: write       # GHCR push
+
+jobs:
+  # ── Job 1: Unit Tests ──────────────────────────────────────
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest httpx
+
+      - name: Run pytest
+        env:
+          TESTING: "1"
+        run: python -m pytest ../tests/ --ignore=../tests/e2e/ -x -q
+
+  # ── Job 2: Build & Push Docker Image ───────────────────────
+  build:
+    name: Build & Push Image
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.meta.outputs.version }}
+      image-digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=
+
+      - name: Build and push Docker image
+        id: push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+
+  # ── Job 3: GitHub Release ──────────────────────────────────
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        run: |
+          TAG="${GITHUB_REF_NAME}"           # e.g., v1.0.0
+          VER="${TAG#v}"                      # e.g., 1.0.0
+
+          # Extract the section for this version from CHANGELOG.md
+          # Match from "## [vX.Y.Z]" to the next "## [" or EOF
+          NOTES=$(awk "/^## \\[v?${VER}\\]/{found=1; next} /^## \\[/{if(found) exit} found{print}" CHANGELOG.md)
+
+          if [ -z "$NOTES" ]; then
+            NOTES="Release ${TAG}. See CHANGELOG.md for details."
+          fi
+
+          # Write to file to preserve newlines
+          echo "$NOTES" > /tmp/release-notes.md
+
+          # Append image info
+          echo "" >> /tmp/release-notes.md
+          echo "---" >> /tmp/release-notes.md
+          echo "" >> /tmp/release-notes.md
+          echo "### Docker Image" >> /tmp/release-notes.md
+          echo "" >> /tmp/release-notes.md
+          echo '```' >> /tmp/release-notes.md
+          echo "docker pull ghcr.io/${{ github.repository }}:${VER}" >> /tmp/release-notes.md
+          echo '```' >> /tmp/release-notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "${{ github.ref_name }} — SRE Alert Tracking System"
+          body_path: /tmp/release-notes.md
+          draft: false
+          prerelease: false

@@ -28,16 +28,17 @@
 
 ### Docker Image
 
-```bash
-# 本機 build
-docker build -t sre-alert-tracker:1.0.0 .
+CI 自動產出（push `v*` tag 觸發 `.github/workflows/release.yaml`）：
 
-# 推到 registry（依團隊流程）
-docker tag sre-alert-tracker:1.0.0 <REGISTRY>/sre-alert-tracker:1.0.0
-docker push <REGISTRY>/sre-alert-tracker:1.0.0
+```bash
+# 從 GHCR 拉取
+docker pull ghcr.io/vencil/sre-alert-tracker:1.0.0
+
+# 或本機 build
+docker build -t sre-alert-tracker:1.0.0 .
 ```
 
-Image 為 multi-stage build（Node frontend → Python backend），最終產物約 200MB。
+Image 為 multi-stage build（Node 20 frontend → Python 3.12 backend），non-root user，內建 HEALTHCHECK。
 
 ### K8s Namespace（建議）
 
