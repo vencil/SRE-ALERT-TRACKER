@@ -1,6 +1,6 @@
 # 架構設計文件 — SRE Alert Tracking System
 
-> **版本：** v0.1.0 (設計階段)
+> **版本：** v1.0.0
 > **相關文件：** [CLAUDE.md](../CLAUDE.md) | [README.md](../README.md)
 
 ---
@@ -472,95 +472,56 @@ CSV 欄位：`week, date, alert_name, severity, cluster, instance, occurrence_co
 
 ## 9. 部署架構
 
-### 9.1 Kubernetes 資源
+> 完整部署步驟（含 Testing vs Production 差異）請參考 **[K8s 部署指南](deployment-guide.md)**。
 
-```yaml
-# deployment.yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: alert-tracker
-spec:
-  replicas: 1
-  template:
-    spec:
-      containers:
-      - name: alert-tracker
-        image: ghcr.io/<org>/alert-tracker:0.1.0
-        ports:
-        - containerPort: 8000
-        env:
-        - name: AUTH_MODE
-          value: "oauth2-proxy"          # or "none"
-        - name: DATABASE_URL
-          value: ""                       # 空=SQLite, 有值=MariaDB
-        - name: POLLER_INTERVAL_HOURS
-          value: "8"
-        - name: POLLER_LOOKBACK_HOURS
-          value: "12"
-        - name: RETENTION_MONTHS
-          value: "12"
-        - name: PURGE_CRON
-          value: "0 3 1 * *"             # 每月 1 號凌晨 3 點
-        volumeMounts:
-        - name: data
-          mountPath: /data                # SQLite 檔案位置
-        - name: config
-          mountPath: /app/config          # clusters.yaml
-      volumes:
-      - name: data
-        persistentVolumeClaim:
-          claimName: alert-tracker-data
-      - name: config
-        configMap:
-          name: alert-tracker-config
----
-# service.yaml — ClusterIP only (behind oauth2-proxy)
-apiVersion: v1
-kind: Service
-metadata:
-  name: alert-tracker
-spec:
-  type: ClusterIP
-  ports:
-  - port: 8000
-    targetPort: 8000
----
-# configmap.yaml — Cluster 清單
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: alert-tracker-config
-data:
-  clusters.yaml: |
-    clusters:
-      - name: prod-cluster-a
-        prometheus_url: http://prometheus.monitoring.svc:9090
-        alertmanager_url: http://alertmanager.monitoring.svc:9093
-      - name: prod-cluster-b
-        prometheus_url: http://prometheus.monitoring.svc:9090
-        alertmanager_url: http://alertmanager.monitoring.svc:9093
-```
+### 9.1 部署模式
 
-### 9.2 Docker Multi-stage Build
+| 環境 | 認證 | 資料庫 | Poller | 安全 |
+|------|------|--------|--------|------|
+| Lab | `AT_AUTH_MODE=none` | SQLite (local) | 1h/2h | 無 |
+| Testing | `AT_AUTH_MODE=none` | SQLite (PVC) | 4h/6h | 建議 |
+| Production | `AT_AUTH_MODE=oauth2-proxy` | SQLite (PVC) 或 MariaDB | 8h/12h | 必須 |
+
+### 9.2 Kubernetes 資源
+
+K8s manifests 位於 `k8s/` 目錄：
+
+| 資源 | 檔案 | 說明 |
+|------|------|------|
+| Deployment | `deployment.yaml` | Alembic init-container + security hardening |
+| Service | `service.yaml` | ClusterIP (only behind oauth2-proxy) |
+| PVC | `pvc.yaml` | SQLite 資料持久化 (1Gi) |
+| ConfigMap | `configmap.yaml` | Cluster 清單 (clusters.yaml) |
+| Ingress | `ingress.yaml` | TLS + oauth2-proxy annotations |
+
+**Security 特性（已內建於 deployment.yaml）：** Recreate strategy、`runAsNonRoot`、`readOnlyRootFilesystem`、`drop ALL` capabilities、liveness/readiness/startup probes、emptyDir /tmp。
+
+### 9.3 環境變數
+
+所有環境變數使用 `AT_` 前綴：
+
+| 變數 | 預設值 | 說明 |
+|------|--------|------|
+| `AT_AUTH_MODE` | `oauth2-proxy` | `none` 關閉認證 (Lab/Testing) |
+| `AT_DATABASE_URL` | (空) | 空=SQLite; `mysql+pymysql://...`=MariaDB |
+| `AT_DATA_DIR` | `/data` | SQLite 資料目錄 |
+| `AT_CONFIG_DIR` | `/app/config` | clusters.yaml 目錄 |
+| `AT_POLLER_INTERVAL_HOURS` | `8` | 拉取間隔 |
+| `AT_POLLER_LOOKBACK_HOURS` | `12` | 回溯窗口 |
+
+### 9.4 Docker Multi-stage Build
 
 ```dockerfile
-# Stage 1: Frontend build
+# Stage 1: Frontend build (Node 20)
 FROM node:20-alpine AS frontend
-WORKDIR /app/frontend
-COPY frontend/package*.json ./
-RUN npm ci
 COPY frontend/ ./
-RUN npm run build
+RUN npm ci && npm run build
 
-# Stage 2: Backend + Frontend static
+# Stage 2: Backend + Frontend static (Python 3.12)
 FROM python:3.12-slim
-WORKDIR /app
-COPY backend/requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ ./
 COPY --from=frontend /app/frontend/dist ./static
-EXPOSE 8000
+# non-root user, HEALTHCHECK, readOnlyRootFilesystem-ready
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
 ```
 
@@ -597,17 +558,16 @@ clusters:
 ### 11.1 docker-compose.yml
 
 ```yaml
-version: "3.9"
 services:
   app:
     build: .
     ports:
       - "8000:8000"
     environment:
-      AUTH_MODE: "none"
-      DATABASE_URL: ""
-      POLLER_INTERVAL_HOURS: "1"      # Lab 環境加速
-      POLLER_LOOKBACK_HOURS: "2"
+      AT_AUTH_MODE: "none"
+      AT_DATABASE_URL: ""
+      AT_POLLER_INTERVAL_HOURS: "1"      # Lab 環境加速
+      AT_POLLER_LOOKBACK_HOURS: "2"
     volumes:
       - ./data:/data
       - ./config:/app/config

@@ -140,7 +140,8 @@ Deployment 包含：Recreate strategy（避免 SQLite dual-write）、Alembic in
 
 | 文件 | 說明 | 目標讀者 |
 |------|------|---------|
-| [架構設計](docs/architecture-design.md) | 完整架構、資料模型、API 設計、部署配置 | 開發者、AI Agent |
+| [K8s 部署指南](docs/deployment-guide.md) | Testing vs Production 部署、環境變數、安全配置 | SRE、部署人員 |
+| [架構設計](docs/architecture-design.md) | 完整架構、資料模型、API 設計 | 開發者、AI Agent |
 | [CLAUDE.md](CLAUDE.md) | AI Agent 開發上下文速查 | AI Agent |
 | [CHANGELOG.md](CHANGELOG.md) | 版本變更日誌 | 全體 |
 

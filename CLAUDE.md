@@ -131,7 +131,8 @@ CHANGELOG.md 需手動更新 release notes（在 `make release` 前完成）。
 
 | 文件 | 用途 |
 |------|------|
-| `README.md` | 專案概覽、快速開始、部署指南 |
+| `README.md` | 專案概覽、快速開始 |
+| `docs/deployment-guide.md` | K8s 部署指南（Testing vs Production） |
 | `docs/architecture-design.md` | 完整架構設計 |
 | `docs/internal/testing-playbook.md` | 測試執行、整合測試規劃 |
 | `docs/internal/github-release-playbook.md` | Git push + Release 流程 |
