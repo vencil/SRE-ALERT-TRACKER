@@ -2,7 +2,7 @@
 
 ## 專案概覽
 
-SRE Alert Tracking System v1.0.0 — 團隊值班 alert 追蹤紀錄表。自動拉取多座 K8s cluster 的 alert，提供人工填寫處理紀錄、週報管理、趨勢分析。
+SRE Alert Tracking System v1.1.0 — 團隊值班 alert 追蹤紀錄表。自動拉取多座 K8s cluster 的 alert，提供人工填寫處理紀錄、週報管理、趨勢分析。
 
 **技術棧：** FastAPI + React + TailwindCSS v4 + Vite + SQLAlchemy | SQLite / MariaDB | Docker + K8s
 

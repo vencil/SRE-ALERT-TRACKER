@@ -17,7 +17,7 @@ FROM python:3.12-slim AS production
 # Labels
 LABEL maintainer="sre-team" \
       description="SRE Alert Tracking System" \
-      version="1.0.0"
+      version="1.1.0"
 
 WORKDIR /app
 

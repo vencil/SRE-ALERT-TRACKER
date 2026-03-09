@@ -1,6 +1,6 @@
 # SRE Alert Tracking System
 
-> 團隊內部值班 Alert 追蹤紀錄系統 v1.0.0 — 自動拉取多座 K8s cluster 的 alert，值班人員填寫處理紀錄，週報管理、趨勢分析、匯出。
+> 團隊內部值班 Alert 追蹤紀錄系統 v1.1.0 — 自動拉取多座 K8s cluster 的 alert，值班人員填寫處理紀錄，週報管理、趨勢分析、匯出。
 
 ---
 
