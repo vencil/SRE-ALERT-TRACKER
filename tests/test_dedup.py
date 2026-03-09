@@ -2,6 +2,10 @@
 
 from datetime import date, datetime
 
+import pytest
+from sqlalchemy.exc import IntegrityError
+
+from models.alert_record import AlertRecord
 from services.dedup import compute_fingerprint, upsert_alert
 
 
@@ -130,3 +134,65 @@ class TestUpsertAlert:
         db_session.flush()
 
         assert result.last_firing_at == datetime(2026, 3, 9, 15, 0)
+
+    def test_unique_constraint_prevents_duplicate_insert(self, db_session, seed_report_section):
+        """Verify DB-level UniqueConstraint(daily_section_id, fingerprint) blocks duplicates.
+
+        This tests the defensive guard added in case the ORM-level dedup
+        (with_for_update) is bypassed by a race condition.
+        """
+        cluster, report, section = seed_report_section
+
+        # Insert first record via ORM directly (bypass dedup logic)
+        alert1 = AlertRecord(
+            daily_section_id=section.id,
+            cluster_id=cluster.id,
+            fingerprint="dup-fp",
+            alert_name="DupAlert",
+            severity="warning",
+            occurrence_count=1,
+        )
+        db_session.add(alert1)
+        db_session.commit()
+
+        # Attempt to insert duplicate — same section + fingerprint
+        alert2 = AlertRecord(
+            daily_section_id=section.id,
+            cluster_id=cluster.id,
+            fingerprint="dup-fp",
+            alert_name="DupAlert",
+            severity="warning",
+            occurrence_count=1,
+        )
+        db_session.add(alert2)
+        with pytest.raises(IntegrityError):
+            db_session.commit()
+
+        # Cleanup: rollback so session is usable
+        db_session.rollback()
+
+    def test_different_section_same_fingerprint_allowed(self, db_session, seed_report_section):
+        """Same fingerprint in different daily sections should be allowed."""
+        cluster, report, section = seed_report_section
+
+        # Create a second section (different date)
+        from models.daily_section import DailySection
+        section2 = DailySection(report_id=report.id, section_date=date(2026, 3, 10))
+        db_session.add(section2)
+        db_session.flush()
+
+        # Insert same fingerprint into both sections — should succeed
+        for sec in [section, section2]:
+            alert = AlertRecord(
+                daily_section_id=sec.id,
+                cluster_id=cluster.id,
+                fingerprint="cross-section-fp",
+                alert_name="CrossSectionAlert",
+                severity="warning",
+                occurrence_count=1,
+            )
+            db_session.add(alert)
+
+        db_session.commit()  # Should NOT raise
+        count = db_session.query(AlertRecord).filter_by(fingerprint="cross-section-fp").count()
+        assert count == 2
