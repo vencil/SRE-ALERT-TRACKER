@@ -11,6 +11,10 @@ metadata:
     nginx.ingress.kubernetes.io/auth-response-headers: "X-Forwarded-User,X-Forwarded-Email"
 spec:
   ingressClassName: nginx
+  tls:
+    - hosts:
+        - alert-tracker.example.com
+      secretName: alert-tracker-tls  # cert-manager or manual TLS secret
   rules:
     - host: alert-tracker.example.com
       http:

@@ -37,12 +37,12 @@ COPY VERSION /app/VERSION
 # Copy cluster config template
 COPY config/ /app/config/
 
-# Create data directory for SQLite
-RUN mkdir -p /data
+# Create data directory for SQLite + tmp for Python cache (readOnlyRootFilesystem)
+RUN mkdir -p /data /tmp/app-cache
 
 # Security: non-root user
 RUN useradd -m -r -s /usr/sbin/nologin appuser \
-    && chown -R appuser:appuser /app /data
+    && chown -R appuser:appuser /app /data /tmp/app-cache
 
 USER appuser
 

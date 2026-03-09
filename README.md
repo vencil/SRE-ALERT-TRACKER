@@ -73,9 +73,9 @@ graph LR
 
 | 層 | 技術 | 說明 |
 |----|------|------|
-| Frontend | React + TailwindCSS + Vite | 由 FastAPI StaticFiles serve |
+| Frontend | React + TailwindCSS v4 + Vite | 由 FastAPI StaticFiles serve |
 | Backend | Python FastAPI + SQLAlchemy + APScheduler | API-first，自動 OpenAPI 文件 |
-| Database | SQLite (預設) / MariaDB (可選) | `DATABASE_URL` 環境變數切換 |
+| Database | SQLite (預設) / MariaDB (可選) | `AT_DATABASE_URL` 環境變數切換 |
 | Auth | oauth2-proxy | 讀 `X-Forwarded-User` header |
 | Deploy | 單一 Docker image (multi-stage build) | K8s Deployment + ClusterIP + PVC |
 
@@ -93,6 +93,7 @@ docker compose up -d
 
 # 3. 開啟瀏覽器
 # App: http://localhost:8000
+# Swagger API Docs: http://localhost:8000/docs
 # Fake Prometheus: http://localhost:9090
 # Fake Alertmanager: http://localhost:9093
 
@@ -105,30 +106,33 @@ docker compose --profile mariadb up -d
 ## 部署（Kubernetes）
 
 ```bash
-# 1. 建立 ConfigMap（Cluster 清單）
+# 1. 建立 ConfigMap（Cluster 清單）+ Secret（敏感 env，可選）
 kubectl apply -f k8s/configmap.yaml
+# kubectl create secret generic sre-alert-tracker-env --from-literal=AT_DATABASE_URL=...
 
 # 2. 建立 PVC（SQLite 資料持久化）
 kubectl apply -f k8s/pvc.yaml
 
-# 3. 部署
+# 3. 部署（含 Alembic init-container 自動 migration）
 kubectl apply -f k8s/deployment.yaml
 kubectl apply -f k8s/service.yaml
 
-# 4. (搭配 oauth2-proxy 的 Ingress)
+# 4. (搭配 oauth2-proxy 的 Ingress + TLS)
 kubectl apply -f k8s/ingress.yaml
 ```
+
+Deployment 包含：Recreate strategy（避免 SQLite dual-write）、Alembic init-container、readOnlyRootFilesystem + drop ALL capabilities、liveness/readiness/startup probes。
 
 **環境變數：**
 
 | 變數 | 預設 | 說明 |
 |------|------|------|
-| `AUTH_MODE` | `oauth2-proxy` | `none` 關閉認證 (Lab 用) |
-| `DATABASE_URL` | (空) | 空=SQLite `/data/alerts.db`; `mysql+pymysql://...`=MariaDB |
-| `POLLER_INTERVAL_HOURS` | `8` | 拉取間隔 |
-| `POLLER_LOOKBACK_HOURS` | `12` | 回溯時間窗口 |
-| `RETENTION_MONTHS` | `12` | 資料保留月數 |
-| `PURGE_CRON` | `0 3 1 * *` | Purge 排程 (cron expression) |
+| `AT_AUTH_MODE` | `oauth2-proxy` | `none` 關閉認證 (Lab 用) |
+| `AT_DATABASE_URL` | (空) | 空=SQLite `/data/alerts.db`; `mysql+pymysql://...`=MariaDB |
+| `AT_POLLER_INTERVAL_HOURS` | `8` | 拉取間隔 |
+| `AT_POLLER_LOOKBACK_HOURS` | `12` | 回溯時間窗口 |
+| `AT_DATA_DIR` | `/data` | SQLite 資料目錄 |
+| `AT_CONFIG_DIR` | `/app/config` | clusters.yaml 所在目錄 |
 
 ---
 
@@ -147,16 +151,23 @@ kubectl apply -f k8s/ingress.yaml
 ```
 sre-alert-tracker/
 ├── backend/                   # FastAPI 後端
+│   ├── alembic/               # DB migration (Alembic)
 │   ├── models/                # SQLAlchemy ORM (12 tables)
-│   ├── routers/               # API handlers (12 routers)
-│   ├── services/              # Business logic (poller, dedup, filter, export, retention)
+│   ├── routers/               # API handlers (13 routers)
+│   ├── services/              # Business logic (7 services)
 │   ├── middleware/            # Auth middleware (oauth2-proxy / none)
 │   └── schemas/               # Pydantic models
-├── frontend/                  # React + TailwindCSS
-│   └── src/pages/             # 6 pages
+├── frontend/                  # React + TailwindCSS v4 + Vite
+│   └── src/
+│       ├── pages/             # 6 pages
+│       └── components/        # 7 components (含 ErrorBoundary)
+├── tests/                     # 單元測試 (16 files, 112 passed)
+│   └── e2e/                   # Playwright E2E 瀏覽器測試
 ├── config/                    # clusters.yaml 模板
 ├── lab/                       # Fake Prometheus + Alertmanager
 ├── k8s/                       # K8s manifests
+├── scripts/                   # bump_version.py 等工具
+├── VERSION                    # 版號單一來源
 ├── docker-compose.yml
 ├── Dockerfile
 └── Makefile

@@ -4,7 +4,7 @@
 
 SRE Alert Tracking System v1.0.0 — 團隊值班 alert 追蹤紀錄表。自動拉取多座 K8s cluster 的 alert，提供人工填寫處理紀錄、週報管理、趨勢分析。
 
-**技術棧：** FastAPI + React + TailwindCSS + SQLAlchemy | SQLite / MariaDB | Docker + K8s
+**技術棧：** FastAPI + React + TailwindCSS v4 + Vite + SQLAlchemy | SQLite / MariaDB | Docker + K8s
 
 ## 核心機制
 
@@ -23,16 +23,18 @@ backend/
   main.py              # FastAPI entry + StaticFiles + APScheduler
   config.py            # Settings (AT_* env vars + clusters.yaml)
   database.py          # SQLAlchemy engine + session
+  alembic/             # DB migration scripts (env.py + versions/)
   models/              # 10 files, 12 tables (含 association tables)
-  routers/             # 11 files, 12 routers (sections 在 reports.py 內)
+  routers/             # 12 files, 13 routers (含 test_seed Lab-only)
   services/            # 7 files (alert_poller, dedup, filter_engine, report_generator, cluster_health, export_service, retention_manager)
   middleware/auth.py   # Auth middleware
   schemas/             # 8 files, Pydantic models
 frontend/
   src/pages/           # 6 pages (ReportList, ReportDetail, AlertDetail, Search, Dashboard, Settings)
-  src/components/      # 6 components (AlertCard, LabelTagInput, LabelTag, SeverityBadge, ExportButton, Navbar)
+  src/components/      # 7 components (AlertCard, ErrorBoundary, LabelTagInput, LabelTag, SeverityBadge, ExportButton, Navbar)
   src/api/client.js    # Axios API wrapper
-tests/                 # 15 test files, 108 passed
+tests/                 # 16 test files, 112 passed
+tests/e2e/             # Playwright E2E 瀏覽器測試
 scripts/bump_version.py # 版號管理工具
 VERSION                # 版號單一來源
 config/clusters.yaml   # Cluster endpoint 清單 (ConfigMap)
@@ -72,6 +74,7 @@ k8s/                   # deployment, service, pvc, configmap, ingress
 | Admin | `POST /api/admin/purge`, `GET/PATCH /api/admin/retention` |
 | Maintenance | `GET/POST/PATCH/DELETE /api/maintenance` |
 | Auth | `GET /api/me` |
+| Test (Lab) | `POST /api/test/seed` (僅 `AT_AUTH_MODE=none`) |
 
 ## 開發規範
 
@@ -96,9 +99,14 @@ Lab 預設：`AT_AUTH_MODE=none`、poller interval=1h、lookback=2h。
 ## 測試
 
 ```bash
-cd backend && TESTING=1 python -m pytest ../tests/ -x -q    # 快速
-TESTING=1 python -m pytest tests/ -v --tb=short             # 詳細
+cd backend && TESTING=1 python -m pytest ../tests/ -x -q    # 單元測試（快速）
+TESTING=1 python -m pytest tests/ -v --tb=short             # 單元測試（詳細）
+make test-e2e                                                # E2E 瀏覽器測試（需先 make dev）
 ```
+
+`make test` 自動排除 `tests/e2e/`（需 playwright），兩者互不干擾。
+
+E2E 用 pytest-playwright (sync_api)，透過 `POST /api/test/seed` 建立測試資料。
 
 ## 版號管理
 
@@ -117,7 +125,7 @@ CHANGELOG.md 需手動更新 release notes（在 `make release` 前完成）。
 
 ## Makefile
 
-`make dev` / `make dev-down` / `make test` / `make lint` / `make build` / `make version-check` / `make bump` / `make release` / `make help`
+`make dev` / `make dev-down` / `make test` / `make test-e2e` / `make lint` / `make build` / `make version-check` / `make bump` / `make release` / `make help`
 
 ## 文件導覽
 

@@ -5,7 +5,9 @@ metadata:
   labels:
     app: sre-alert-tracker
 spec:
-  replicas: 1
+  replicas: 1  # Single-writer (SQLite / global poller state); scale via read-replicas if needed
+  strategy:
+    type: Recreate  # Avoid dual-write on SQLite during rollout
   selector:
     matchLabels:
       app: sre-alert-tracker
@@ -14,12 +16,48 @@ spec:
       labels:
         app: sre-alert-tracker
     spec:
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 1000
+
+      # --- Init Container: DB migration ---
+      initContainers:
+        - name: db-migrate
+          image: sre-alert-tracker:latest
+          command: ["python", "-m", "alembic", "upgrade", "head"]
+          env:
+            - name: AT_AUTH_MODE
+              value: "oauth2-proxy"
+            - name: AT_DATA_DIR
+              value: "/data"
+            - name: AT_CONFIG_DIR
+              value: "/app/config"
+          envFrom:
+            - secretRef:
+                name: sre-alert-tracker-env
+                optional: true
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: clusters-config
+              mountPath: /app/config
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+
+      # --- Main Container ---
       containers:
         - name: sre-alert-tracker
           image: sre-alert-tracker:latest
           ports:
             - containerPort: 8000
               protocol: TCP
+              name: http
           env:
             - name: AT_AUTH_MODE
               value: "oauth2-proxy"
@@ -31,26 +69,41 @@ spec:
               value: "8"
             - name: AT_POLLER_LOOKBACK_HOURS
               value: "12"
+          envFrom:
+            - secretRef:
+                name: sre-alert-tracker-env
+                optional: true
           volumeMounts:
             - name: data
               mountPath: /data
             - name: clusters-config
               mountPath: /app/config
               readOnly: true
+            - name: tmp
+              mountPath: /tmp
           livenessProbe:
             httpGet:
               path: /api/health
-              port: 8000
+              port: http
             initialDelaySeconds: 10
             periodSeconds: 30
             timeoutSeconds: 5
+            failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /api/health
-              port: 8000
+              port: http
             initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 3
+            failureThreshold: 2
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            failureThreshold: 10
           resources:
             requests:
               cpu: 100m
@@ -58,6 +111,12 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+
       volumes:
         - name: data
           persistentVolumeClaim:
@@ -65,3 +124,6 @@ spec:
         - name: clusters-config
           configMap:
             name: sre-alert-tracker-clusters
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi

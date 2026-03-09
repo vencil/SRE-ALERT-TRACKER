@@ -1,0 +1,5 @@
+# Development & testing dependencies
+pytest
+httpx
+ruff
+pytest-playwright

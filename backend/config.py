@@ -46,11 +46,14 @@ class Settings(BaseSettings):
 
     @property
     def effective_database_url(self) -> str:
-        """Return SQLite URL if DATABASE_URL is empty."""
+        """Return SQLite URL if DATABASE_URL is empty.
+
+        Note: does NOT create directories — that is init_db()'s job.
+        Avoids PermissionError when config is imported in CI / tests.
+        """
         if self.database_url:
             return self.database_url
         db_path = Path(self.data_dir) / "alerts.db"
-        db_path.parent.mkdir(parents=True, exist_ok=True)
         return f"sqlite:///{db_path}"
 
     @property

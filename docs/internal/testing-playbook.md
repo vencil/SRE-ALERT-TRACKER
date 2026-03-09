@@ -38,8 +38,37 @@ TESTING=1 python -m pytest tests/test_poller.py -v
 | `test_health.py` | cluster_health | health check |
 | `test_auth.py` | middleware/auth | none mode |
 | `test_admin.py` | routers/admin | retention + purge |
+| `test_seed.py` | routers/test_seed | seed 端點 CRUD |
 
-目前：108 passed, 3 skipped。
+目前：112 passed, 3 skipped。
+
+## E2E 瀏覽器測試
+
+使用 pytest-playwright (sync_api) 驗證核心使用者路徑。
+
+**前置條件：**
+```bash
+make dev                            # 啟動 Lab（App + Prometheus + Alertmanager）
+pip install pytest-playwright       # 安裝 playwright pytest plugin
+playwright install chromium         # 安裝瀏覽器
+```
+
+**執行：**
+```bash
+make test-e2e                       # 跑 E2E（預設 http://localhost:8000）
+E2E_BASE_URL=http://localhost:3000 make test-e2e  # 自訂 URL
+```
+
+**測試範圍（`tests/e2e/test_critical_workflow.py`）：**
+- 報表列表 → 點擊報表連結 → 報表明細頁
+- AlertCard 可見性 + textarea placeholder 驗證
+- Debounce 自動儲存：填寫 → saved 指示器 → reload 持久化
+
+**資料 seed：** `POST /api/test/seed`（Lab-only），由 `conftest.py` 的 `seeded_report` fixture 自動呼叫。
+
+**注意事項：**
+- `make test` 只跑單元測試（`tests/` 根目錄），不含 E2E
+- `make test-e2e` 只跑 `tests/e2e/`，兩者互不干擾
 
 ## Integration Testing（規劃）
 
@@ -48,25 +77,17 @@ TESTING=1 python -m pytest tests/test_poller.py -v
 **Layer 1 — Docker Compose Lab 驗證：**
 ```bash
 docker compose up -d --build
-# 等 app 啟動
 curl http://localhost:8000/api/health
-# 觸發 poller（從 fake Prometheus + Alertmanager 拉取）
 curl -X POST http://localhost:8000/api/poller/trigger
-# 驗證 alert 寫入
 curl http://localhost:8000/api/reports | python3 -m json.tool
 docker compose down
 ```
 
-**Layer 2 — API 端到端測試：**
-- 用 `requests` 或 `httpx` 對 running app 做完整 CRUD 流程
-- 驗證 poller → dedup → report 的完整資料流
-- 驗證 filter rules 實際過濾效果
-
-**Layer 3 — MariaDB 相容性：**
+**Layer 2 — MariaDB 相容性：**
 ```bash
 docker compose --profile mariadb up -d
 # 設定 AT_DATABASE_URL=mysql+pymysql://root:devpass@localhost:3306/alert_tracker
-# 跑相同的 API 端到端測試
+# 跑相同測試驗證 ORM 相容
 ```
 
 ## Lab 環境驗證 Checklist

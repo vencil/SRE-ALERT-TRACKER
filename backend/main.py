@@ -216,6 +216,12 @@ app.include_router(report_tasks_router)
 app.include_router(maintenance_router)
 app.include_router(admin_router)
 
+# Lab-only test seed endpoint (AT_AUTH_MODE=none)
+if settings.auth_mode == "none":
+    from routers.test_seed import router as test_seed_router  # noqa: E402
+
+    app.include_router(test_seed_router)
+
 
 @app.get("/api/health")
 def health_check():

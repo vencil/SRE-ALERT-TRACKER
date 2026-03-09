@@ -1,5 +1,7 @@
 """SQLAlchemy engine + session factory — supports SQLite and MariaDB."""
 
+from pathlib import Path
+
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
@@ -43,5 +45,13 @@ def get_db():
 
 
 def init_db():
-    """Create all tables (called at startup)."""
+    """Create all tables (called at startup).
+
+    For SQLite, ensures the parent directory exists before creating tables.
+    This is the only place that creates the data directory — config.py
+    intentionally avoids mkdir to prevent PermissionError on import.
+    """
+    if settings.is_sqlite:
+        db_path = Path(settings.data_dir)
+        db_path.mkdir(parents=True, exist_ok=True)
     Base.metadata.create_all(bind=engine)

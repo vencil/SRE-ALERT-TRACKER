@@ -1,4 +1,4 @@
-.PHONY: dev dev-down test test-backend lint build version-check bump help
+.PHONY: dev dev-down test test-backend test-e2e lint build version-check bump help
 
 ## Lab 環境
 dev:  ## 啟動 docker compose (Lab 模式)
@@ -11,11 +11,14 @@ dev-logs:  ## 查看 app 日誌
 	docker compose logs -f app
 
 ## 測試
-test:  ## 執行全部 Python tests
-	cd backend && python -m pytest ../tests/ -v --tb=short
+test:  ## 執行單元測試（不含 E2E）
+	cd backend && python -m pytest ../tests/ --ignore=../tests/e2e/ -v --tb=short
 
 test-backend:  ## 僅後端測試
-	cd backend && python -m pytest ../tests/ -v --tb=short
+	cd backend && python -m pytest ../tests/ --ignore=../tests/e2e/ -v --tb=short
+
+test-e2e:  ## 執行 E2E 瀏覽器測試（需先 make dev）
+	python -m pytest tests/e2e/ -v --tb=short
 
 ## 程式碼品質
 lint:  ## Ruff linter
