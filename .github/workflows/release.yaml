@@ -43,7 +43,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          pip install pytest httpx freezegun
+          pip install pytest httpx freezegun pytest-asyncio
 
       - name: Run pytest
         env:
