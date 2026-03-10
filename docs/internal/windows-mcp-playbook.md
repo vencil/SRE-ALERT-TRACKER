@@ -11,7 +11,7 @@
 | Node.js / npm | ⚠️ 可能 OOM | ✅ 完整路徑（見下方） |
 | Docker CLI | ✅ | ✅ |
 | git commit / tag | ✅ | — |
-| git push | ✅ credential.helper store | ✅ 完整路徑（備用） |
+| git push | ✅ credential.helper store（**首選**） | ✅ 完整路徑（備用，常 timeout） |
 | GitHub REST API | ❌ sandbox 擋 | ✅ PowerShell |
 | 瀏覽器操作 | ❌ | ✅ Chrome MCP |
 
@@ -99,3 +99,6 @@ Invoke-RestMethod -Uri $url -Method Post -Headers $headers `
 | 11 | npm / node 不在 PowerShell PATH | `C:\PROGRA~1\nodejs\node.exe` + `...\npm-cli.js` 完整路徑 |
 | 12 | VM npm ci / build OOM killed | 改走 Windows MCP 跑 npm（Windows 記憶體充裕） |
 | 13 | `where.exe git` 回空但 git 確實存在 | PowerShell session PATH 不完整，用 `Get-ChildItem` 確認完整路徑後直接用 |
+| 14 | Desktop Commander `cmd` shell 含空格路徑亂碼 | DC 的 `start_process(shell="cmd")` 對 `"C:\Program Files\..."` 含空格路徑會產生編碼錯誤。**改用 PowerShell tool 或 VM git push** |
+| 15 | Windows MCP PowerShell git push timeout | 大 repo push 常超過 60s timeout。**優先從 VM push**（需先設 `~/.git-credentials`），Windows MCP 為備用 |
+| 16 | VM `git push` 需 credential.helper store | 寫入 `~/.git-credentials`：`https://user:PAT@github.com`（`chmod 600`）。掛載目錄共享，commit 在 Windows 也可見 |
