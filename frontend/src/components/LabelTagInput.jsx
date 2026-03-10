@@ -5,6 +5,8 @@ import LabelTag from "./LabelTag";
 /**
  * Autocomplete label tag input for alert records.
  * Shows existing labels as tags, with a dropdown to add more.
+ *
+ * Parent should pass a `key` prop (e.g. alertId) to reset state when switching alerts.
  */
 export default function LabelTagInput({ alertId, labels: initialLabels, onChange }) {
   const [labels, setLabels] = useState(initialLabels || []);
@@ -20,11 +22,6 @@ export default function LabelTagInput({ alertId, labels: initialLabels, onChange
       .then((data) => setAllLabels(data.labels ?? data ?? []))
       .catch(() => {});
   }, []);
-
-  // Sync when parent changes
-  useEffect(() => {
-    setLabels(initialLabels || []);
-  }, [initialLabels]);
 
   // Close dropdown on outside click
   useEffect(() => {

@@ -24,10 +24,12 @@ export default function Search() {
   });
 
   useEffect(() => {
-    Promise.allSettled([
-      fetchClusters().then((d) => setClusters(Array.isArray(d?.clusters) ? d.clusters : [])),
-      fetchLabels().then((d) => setLabels(Array.isArray(d?.labels) ? d.labels : [])),
-    ]);
+    fetchClusters()
+      .then((d) => setClusters(Array.isArray(d?.clusters) ? d.clusters : []))
+      .catch(() => setClusters([]));
+    fetchLabels()
+      .then((d) => setLabels(Array.isArray(d?.labels) ? d.labels : []))
+      .catch(() => setLabels([]));
   }, []);
 
   async function handleSearch(newOffset = 0) {

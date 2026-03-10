@@ -1,13 +1,15 @@
-"""Dashboard router — trend analytics and top alert aggregation."""
+"""Dashboard router — trend analytics, top alerts, and correlation analysis."""
 
+from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func as sa_func, select
 from sqlalchemy.orm import Session
 
 from database import get_db
 from models.alert_record import AlertRecord
+from models.cluster import Cluster
 from models.daily_section import DailySection
 from models.shift_report import ShiftReport
 
@@ -130,3 +132,119 @@ def get_severity_distribution(
     )
 
     return {"distribution": [{"severity": r.severity, "count": r.count} for r in rows]}
+
+
+@router.get("/correlation")
+def get_correlation(
+    year: int = Query(..., description="Report year"),
+    week: int = Query(..., ge=1, le=53, description="Report week number"),
+    cluster_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Find co-occurring alerts using time-interval overlap analysis.
+
+    Groups alerts whose [first_firing_at, last_firing_at] intervals overlap,
+    revealing potential root-cause relationships (e.g., DB spike followed by
+    API 500s). Only returns groups with 2+ alerts.
+    """
+    report = (
+        db.query(ShiftReport)
+        .filter(ShiftReport.year == year, ShiftReport.week_number == week)
+        .first()
+    )
+    if not report:
+        return {"year": year, "week": week, "groups": []}
+
+    # Fetch all alerts for this week that have firing timestamps
+    query = (
+        db.query(
+            AlertRecord.id,
+            AlertRecord.alert_name,
+            AlertRecord.severity,
+            AlertRecord.fingerprint,
+            AlertRecord.occurrence_count,
+            AlertRecord.first_firing_at,
+            AlertRecord.last_firing_at,
+            AlertRecord.instance,
+            DailySection.section_date,
+            Cluster.name.label("cluster_name"),
+        )
+        .join(DailySection, DailySection.id == AlertRecord.daily_section_id)
+        .join(Cluster, Cluster.id == AlertRecord.cluster_id)
+        .filter(
+            DailySection.report_id == report.id,
+            AlertRecord.first_firing_at.isnot(None),
+        )
+    )
+    if cluster_id is not None:
+        query = query.filter(AlertRecord.cluster_id == cluster_id)
+
+    rows = query.order_by(AlertRecord.first_firing_at).all()
+
+    if not rows:
+        return {"year": year, "week": week, "groups": []}
+
+    # Interval overlap grouping using sweep-line algorithm
+    # Each alert has interval [first_firing_at, last_firing_at or first_firing_at]
+    intervals = []
+    for r in rows:
+        start = r.first_firing_at
+        end = r.last_firing_at if r.last_firing_at and r.last_firing_at > start else start
+        intervals.append({
+            "id": r.id,
+            "alert_name": r.alert_name,
+            "severity": r.severity,
+            "fingerprint": r.fingerprint[:8],
+            "occurrence_count": r.occurrence_count,
+            "first_firing_at": start.isoformat(),
+            "last_firing_at": end.isoformat(),
+            "instance": r.instance,
+            "section_date": r.section_date.isoformat() if r.section_date else None,
+            "cluster_name": r.cluster_name,
+            "_start": start,
+            "_end": end,
+        })
+
+    # Sort by start time, then group overlapping intervals
+    intervals.sort(key=lambda x: x["_start"])
+    groups = []
+    current_group = [intervals[0]]
+    group_end = intervals[0]["_end"]
+
+    for item in intervals[1:]:
+        if item["_start"] <= group_end:
+            # Overlaps with current group
+            current_group.append(item)
+            if item["_end"] > group_end:
+                group_end = item["_end"]
+        else:
+            # No overlap — finalize current group if 2+
+            if len(current_group) >= 2:
+                groups.append(_build_group(current_group))
+            current_group = [item]
+            group_end = item["_end"]
+
+    # Don't forget the last group
+    if len(current_group) >= 2:
+        groups.append(_build_group(current_group))
+
+    return {"year": year, "week": week, "groups": groups}
+
+
+def _build_group(items: list[dict]) -> dict:
+    """Build a correlation group summary from overlapping alert items."""
+    # Remove internal fields
+    clean_items = []
+    for item in items:
+        clean = {k: v for k, v in item.items() if not k.startswith("_")}
+        clean_items.append(clean)
+
+    starts = [i["_start"] for i in items]
+    ends = [i["_end"] for i in items]
+
+    return {
+        "window_start": min(starts).isoformat(),
+        "window_end": max(ends).isoformat(),
+        "alert_count": len(clean_items),
+        "alerts": clean_items,
+    }

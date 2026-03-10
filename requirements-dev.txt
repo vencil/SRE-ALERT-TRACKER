@@ -1,5 +1,7 @@
 # Development & testing dependencies
-pytest
-httpx
-ruff
+pytest==9.0.2
+httpx==0.28.1
+ruff==0.15.5
+freezegun==1.5.5
+pytest-asyncio==1.3.0
 pytest-playwright

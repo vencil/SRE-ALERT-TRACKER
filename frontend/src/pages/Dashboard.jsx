@@ -1,29 +1,21 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   BarChart, Bar, Cell, PieChart, Pie,
 } from "recharts";
 import { fetchTrends, fetchTopAlerts, fetchSeverityDist, fetchClusters } from "../api/client";
-
-const COLORS = ["#6366f1", "#f59e0b", "#ef4444", "#10b981", "#8b5cf6", "#ec4899"];
-const SEVERITY_COLORS = { critical: "#ef4444", warning: "#f59e0b", info: "#3b82f6" };
+import CorrelationSection from "../components/CorrelationSection";
+import { SEVERITY_COLORS, CHART_COLORS } from "../constants";
 
 export default function Dashboard() {
   const [trends, setTrends] = useState([]);
   const [topAlerts, setTopAlerts] = useState([]);
   const [severityDist, setSeverityDist] = useState([]);
-  const [clusterMap, setClusterMap] = useState({});
   const [weeks, setWeeks] = useState(12);
   const [loading, setLoading] = useState(true);
   const [partialError, setPartialError] = useState(false);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    loadData(controller.signal);
-    return () => controller.abort();
-  }, [weeks]);
-
-  async function loadData(signal) {
+  const loadData = useCallback(async (signal) => {
     setLoading(true);
     try {
       const opts = signal ? { signal } : {};
@@ -48,7 +40,6 @@ export default function Dashboard() {
       const clusters = Array.isArray(clusterData?.clusters) ? clusterData.clusters : [];
       const cMap = {};
       clusters.forEach((c) => (cMap[c.id] = c.name));
-      setClusterMap(cMap);
 
       // Transform trends for Recharts: group by week, columns per cluster
       const weekMap = {};
@@ -69,7 +60,13 @@ export default function Dashboard() {
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }
+  }, [weeks]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    loadData(controller.signal);
+    return () => controller.abort();
+  }, [loadData]);
 
   // Get unique cluster names from trend data
   const clusterNames = trends.length > 0
@@ -118,7 +115,7 @@ export default function Dashboard() {
                   key={name}
                   type="monotone"
                   dataKey={name}
-                  stroke={COLORS[i % COLORS.length]}
+                  stroke={CHART_COLORS[i % CHART_COLORS.length]}
                   strokeWidth={2}
                   dot={{ r: 3 }}
                 />
@@ -150,7 +147,7 @@ export default function Dashboard() {
                   {topAlerts.map((entry, i) => (
                     <Cell
                       key={i}
-                      fill={SEVERITY_COLORS[entry.severity] || COLORS[i % COLORS.length]}
+                      fill={SEVERITY_COLORS[entry.severity] || CHART_COLORS[i % CHART_COLORS.length]}
                     />
                   ))}
                 </Bar>
@@ -189,6 +186,9 @@ export default function Dashboard() {
           )}
         </section>
       </div>
+
+      {/* Alert Correlation */}
+      <CorrelationSection trends={trends} />
     </div>
   );
 }

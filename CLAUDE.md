@@ -17,6 +17,11 @@ SRE Alert Tracking System v1.1.1 — 團隊值班 alert 追蹤紀錄表。自動
 | 時區 | DB 存 UTC；`AT_DISPLAY_TIMEZONE=Asia/Taipei` 控制介面顯示與交接日期 |
 | Annotation 映射 | Poller 自動將 `annotations.summary` → `phenomenon`、`description` → `impact` |
 | 認證 | `AT_AUTH_MODE=oauth2-proxy` → `X-Forwarded-User`；`none` = Lab |
+| Admin 權限 | `AT_ADMIN_USERS` 限制 `/api/admin/*` 端點存取；空值 = 所有認證用戶 |
+| URL 驗證 | Cluster URL 防 SSRF（封鎖 metadata endpoints、link-local、非 http(s) scheme） |
+| 歷史比對 | fingerprint-first + alert_name fallback，只回傳有 action_taken 的歷史紀錄 |
+| Alert 關聯 | Sweep-line interval overlap 分析，找出同時段重疊的 alert 群組 |
+| AIOps 建議 | 可選 LLM 整合（`AT_LLM_PROVIDER`），基於歷史處理紀錄生成建議 |
 
 ## 目錄結構
 
@@ -28,14 +33,14 @@ backend/
   alembic/             # DB migration scripts (env.py + versions/)
   models/              # 10 files, 12 tables (含 association tables)
   routers/             # 12 files, 13 routers (含 test_seed Lab-only)
-  services/            # 9 files: alert_poller, alert_query, dedup, filter_engine, report_generator, cluster_health, export_service, retention_manager, timezone_utils
+  services/            # 10 files: alert_poller, alert_query, dedup, filter_engine, report_generator, cluster_health, export_service, retention_manager, timezone_utils, llm_service
   middleware/auth.py   # Auth middleware
   schemas/             # 8 files, Pydantic models
 frontend/
   src/pages/           # 6 pages (ReportList, ReportDetail, AlertDetail, Search, Dashboard, Settings)
-  src/components/      # 7 components (AlertCard, ErrorBoundary, LabelTagInput, LabelTag, SeverityBadge, ExportButton, Navbar)
+  src/components/      # 8 components (AlertCard, CorrelationSection, ErrorBoundary, ExportButton, LabelTag, LabelTagInput, Navbar, SeverityBadge)
   src/api/client.js    # Axios API wrapper
-tests/                 # 22 test files, 157 passed
+tests/                 # 28 test files, 184 passed
 tests/e2e/             # Playwright E2E 瀏覽器測試
 scripts/bump_version.py # 版號管理工具
 VERSION                # 版號單一來源
@@ -66,14 +71,14 @@ k8s/                   # deployment, service, pvc, configmap, ingress
 |------|-----------|
 | Reports | `GET/POST/PATCH /api/reports`, `GET /api/reports/{id}` |
 | Sections | `PATCH /api/sections/{id}` |
-| Alerts | `GET/PATCH /api/alerts`, `POST/DELETE /api/alerts/{id}/labels` |
+| Alerts | `GET/PATCH /api/alerts`, `POST/DELETE /api/alerts/{id}/labels`, `GET /api/alerts/{id}/history`, `POST /api/alerts/{id}/suggest` |
 | Labels | `GET/POST/PATCH /api/labels`, `POST /api/labels/merge`, `DELETE /api/labels/{id}` |
 | Clusters | `GET /api/clusters`, `POST /api/clusters/health-check` |
 | Filters | `GET/POST /api/filters`, `DELETE /api/filters/{id}` (204) |
 | Poller | `GET /api/poller/status`, `POST /api/poller/trigger` |
 | Tasks | `GET/POST/PATCH /api/tasks`, `PATCH /api/reports/{id}/tasks/{task_id}` |
 | Export | `GET /api/export/report/{id}?format=csv\|json\|md`, `GET /api/export/alerts` |
-| Dashboard | `GET /api/dashboard/{trends,top-alerts,severity-distribution}` |
+| Dashboard | `GET /api/dashboard/{trends,top-alerts,severity-distribution,correlation}` |
 | Admin | `POST /api/admin/purge`, `GET/PATCH /api/admin/retention` |
 | Maintenance | `GET/POST/PATCH/DELETE /api/maintenance` |
 | Auth | `GET /api/me` |
@@ -135,6 +140,8 @@ CHANGELOG.md 需手動更新 release notes（在 `make release` 前完成）。
 3. **release** — 從 CHANGELOG.md 擷取 release notes → 建立 GitHub Release
 
 Image tags：`<version>`、`<major>.<minor>`、`<sha>`。
+
+**建議未來 CI 擴充：** `pip audit` + `npm audit` 檢查已知漏洞依賴。
 
 ## Makefile
 

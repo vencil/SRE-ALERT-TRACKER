@@ -179,6 +179,10 @@ app = FastAPI(
     description="值班 alert 追蹤紀錄系統",
     version=APP_VERSION,
     lifespan=lifespan,
+    # Hide OpenAPI docs in production (AT_OPENAPI_ENABLED=false)
+    docs_url="/docs" if settings.openapi_enabled else None,
+    redoc_url="/redoc" if settings.openapi_enabled else None,
+    openapi_url="/openapi.json" if settings.openapi_enabled else None,
 )
 
 # CORS — Lab 模式允許所有來源 (不帶 credentials)；
@@ -248,7 +252,13 @@ if settings.auth_mode == AuthMode.NONE:
 @app.get("/api/health")
 def health_check():
     """Simple health check endpoint."""
-    return {"status": "ok", "version": APP_VERSION}
+    return {
+        "status": "ok",
+        "version": APP_VERSION,
+        "features": {
+            "llm_enabled": settings.llm_enabled,
+        },
+    }
 
 
 @app.get("/api/me")

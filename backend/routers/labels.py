@@ -80,8 +80,8 @@ def merge_labels(data: LabelMerge, db: Session = Depends(get_db)):
     if data.source_id == data.target_id:
         raise HTTPException(status_code=422, detail="Source and target must be different")
 
-    source = db.query(Label).filter(Label.id == data.source_id).first()
-    target = db.query(Label).filter(Label.id == data.target_id).first()
+    source = db.query(Label).filter(Label.id == data.source_id).with_for_update().first()
+    target = db.query(Label).filter(Label.id == data.target_id).with_for_update().first()
     if not source:
         raise HTTPException(status_code=404, detail="Source label not found")
     if not target:

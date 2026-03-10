@@ -280,6 +280,8 @@ API-first 設計，所有前端操作均透過 REST API。FastAPI 自動生成 O
 | **Alert Records** | GET | `/api/alerts` | 列出 alerts（分頁，可篩 cluster/severity/label/week/daterange） |
 | | GET | `/api/alerts/{id}` | 單筆 alert 明細 |
 | | PATCH | `/api/alerts/{id}` | 更新 alert 紀錄（phenomenon/impact/action_taken/手動覆寫欄位） |
+| | GET | `/api/alerts/{id}/history` | 歷史比對（fingerprint-first + alert_name fallback） |
+| | POST | `/api/alerts/{id}/suggest` | AI 處理建議（需 LLM 啟用，否則 501） |
 | | POST | `/api/alerts/{id}/labels` | 為 alert 加 label |
 | | DELETE | `/api/alerts/{id}/labels/{label_id}` | 移除 alert 的 label |
 | **Labels** | GET | `/api/labels` | 列出所有 labels |
@@ -304,11 +306,16 @@ API-first 設計，所有前端操作均透過 REST API。FastAPI 自動生成 O
 | | GET | `/api/export/alerts` | 匯出篩選結果（CSV） |
 | **Dashboard** | GET | `/api/dashboard/trends` | Alert 趨勢統計（per-cluster, per-week） |
 | | GET | `/api/dashboard/top-alerts` | Top-N 最頻繁 alert |
+| | GET | `/api/dashboard/severity-distribution` | Severity 分布統計 |
+| | GET | `/api/dashboard/correlation` | Alert 關聯分析（sweep-line overlap） |
 | **Poller** | GET | `/api/poller/status` | 拉取排程狀態 |
 | | POST | `/api/poller/trigger` | 手動觸發拉取 |
 | **Admin** | POST | `/api/admin/purge` | 手動觸發 retention purge |
 | | GET | `/api/admin/retention` | 查看 retention 設定 |
 | | PATCH | `/api/admin/retention` | 更新 retention 設定 |
+| **Auth** | GET | `/api/me` | 當前使用者資訊 |
+| **Health** | GET | `/api/health` | 健康檢查 + feature flags |
+| **Test (Lab)** | POST | `/api/test/seed` | 建立測試資料（僅 `AT_AUTH_MODE=none`） |
 
 ### 4.2 認證 Middleware
 
@@ -322,6 +329,22 @@ API-first 設計，所有前端操作均透過 REST API。FastAPI 自動生成 O
 ```
 
 **安全要求：** K8s 部署時 Service `type: ClusterIP`，確保只有 Ingress / oauth2-proxy 能打進來。
+
+### 4.3 Admin 端點權限
+
+`/api/admin/*` 端點受 `require_admin` dependency 保護。`AT_ADMIN_USERS` 環境變數指定允許存取的使用者清單（逗號分隔）。空值表示所有認證用戶皆可存取。Lab mode (`AT_AUTH_MODE=none`) 跳過檢查。
+
+### 4.4 Cluster URL 安全驗證
+
+`clusters.yaml` 載入時，所有 `prometheus_url` 和 `alertmanager_url` 經過 `validate_cluster_url()` 驗證：
+
+- 僅允許 `http` / `https` scheme
+- 封鎖 AWS metadata (`169.254.169.254`)、GCP metadata (`metadata.google.internal`)、Azure metadata (`100.100.100.200`)
+- 封鎖 link-local 位址 (`169.254.*`)
+
+### 4.5 OpenAPI 生產環境隱藏
+
+`AT_OPENAPI_ENABLED=false` 可隱藏 `/docs`、`/redoc`、`/openapi.json`，減少 production 攻擊面。
 
 ---
 
@@ -484,7 +507,8 @@ Markdown 格式：以週報為單位，按日期分群，每個 alert 含 severi
 |------|-----|------|
 | 每週 Alert 數量折線 | `GET /api/dashboard/trends?range=12w` | 按 cluster 分色，X 軸=週次 |
 | Top-10 最頻繁 Alert | `GET /api/dashboard/top-alerts?range=4w` | 柱狀圖，按 alertname 聚合 |
-| Severity 分布 | `GET /api/dashboard/trends?group_by=severity` | 堆疊面積圖 |
+| Severity 分布 | `GET /api/dashboard/severity-distribution` | 圓餅圖，按 severity 聚合 |
+| Alert 關聯分析 | `GET /api/dashboard/correlation?year=N&week=N` | Sweep-line overlap，同時段重疊群組 + mini Gantt timeline |
 | 維護窗口標註 | overlay | 在折線圖上以灰色區塊標示維護窗口，hover 顯示 reason |
 
 ### 8.2 維護窗口排除
@@ -532,6 +556,12 @@ K8s manifests 位於 `k8s/` 目錄：
 | `AT_DISPLAY_TIMEZONE` | `Asia/Taipei` | IANA 時區名稱，影響介面顯示與週報交接日期（DB 一律存 UTC） |
 | `AT_POLLER_INTERVAL_HOURS` | `8` | 拉取間隔 |
 | `AT_POLLER_LOOKBACK_HOURS` | `12` | 回溯窗口 |
+| `AT_LLM_PROVIDER` | `none` | LLM 供應商（`openai-compatible` 啟用 AIOps 建議） |
+| `AT_LLM_API_BASE` | `https://api.openai.com/v1` | OpenAI-compatible API base URL |
+| `AT_LLM_API_KEY` | (空) | LLM API key |
+| `AT_LLM_MODEL` | `gpt-4o-mini` | LLM 模型名稱 |
+| `AT_ADMIN_USERS` | (空) | 允許存取 admin API 的使用者清單（逗號分隔），空=所有認證用戶 |
+| `AT_OPENAPI_ENABLED` | `true` | 是否啟用 `/docs`、`/openapi.json`（production 建議關閉） |
 
 ### 9.4 Docker Multi-stage Build
 
@@ -672,6 +702,7 @@ sre-alert-tracker/
 │   │   ├── weekly_task.py
 │   │   ├── maintenance_window.py
 │   │   ├── filter_rule.py
+│   │   ├── poller_config.py
 │   │   └── retention_config.py
 │   ├── routers/                   # API route handlers
 │   │   ├── reports.py
@@ -684,7 +715,8 @@ sre-alert-tracker/
 │   │   ├── export.py
 │   │   ├── dashboard.py
 │   │   ├── poller.py
-│   │   └── admin.py
+│   │   ├── admin.py
+│   │   └── test_seed.py          # Lab-only seed endpoint
 │   ├── services/                  # Business logic
 │   │   ├── alert_poller.py        # Dual-engine pull + dedup + filter
 │   │   ├── alert_query.py         # Shared alert filter builder (DRY)
@@ -694,7 +726,8 @@ sre-alert-tracker/
 │   │   ├── retention_manager.py   # Data purge scheduler
 │   │   ├── cluster_health.py      # Health check logic
 │   │   ├── export_service.py      # CSV/JSON/Markdown generation
-│   │   └── timezone_utils.py      # UTC ↔ display timezone conversion
+│   │   ├── timezone_utils.py      # UTC ↔ display timezone conversion
+│   │   └── llm_service.py         # AIOps LLM suggestion (optional)
 │   ├── middleware/
 │   │   └── auth.py                # oauth2-proxy header extraction
 │   ├── schemas/                   # Pydantic request/response models
@@ -705,6 +738,7 @@ sre-alert-tracker/
 ├── frontend/
 │   ├── src/
 │   │   ├── App.jsx
+│   │   ├── constants.js              # Shared severity colors, chart palette
 │   │   ├── pages/
 │   │   │   ├── ReportList.jsx
 │   │   │   ├── ReportDetail.jsx
@@ -714,11 +748,13 @@ sre-alert-tracker/
 │   │   │   └── Settings.jsx
 │   │   ├── components/
 │   │   │   ├── AlertCard.jsx
+│   │   │   ├── CorrelationSection.jsx
+│   │   │   ├── ErrorBoundary.jsx
+│   │   │   ├── ExportButton.jsx
+│   │   │   ├── LabelTag.jsx
 │   │   │   ├── LabelTagInput.jsx
-│   │   │   ├── TaskCheckbox.jsx
-│   │   │   ├── ClusterStatus.jsx
-│   │   │   ├── TrendChart.jsx
-│   │   │   └── ExportButton.jsx
+│   │   │   ├── Navbar.jsx
+│   │   │   └── SeverityBadge.jsx
 │   │   └── api/
 │   │       └── client.js          # Axios/fetch wrapper
 │   ├── package.json
@@ -775,7 +811,4 @@ sre-alert-tracker/
 |--------|------|------|
 | P1 | Slack/Teams 通知整合 | 週報生成時自動推送摘要到頻道 |
 | P1 | 值班人員自動帶入 | 從 oauth2-proxy header 自動辨識當前使用者 |
-| P2 | Alert 關聯分析 | 同時段多個 alert 的 correlation 視覺化 |
-| P2 | 歷史比對 | 同一 alertname 跨週的處理作法比對 |
-| P3 | AIOps 摘要 | LLM 自動從歷史紀錄建議處理作法 |
 | P3 | Webhook 接收模式 | 除了 pull，也支援 Alertmanager webhook push |

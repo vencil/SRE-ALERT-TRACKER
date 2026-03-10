@@ -35,7 +35,9 @@ Alert 風暴發生時，值班人員一邊救火一邊手動統計 alert 發生�
 | **處理紀錄** | 自動帶入 alert 基本資訊（可逃生門覆寫）+ 人工填寫現象/影響/處理作法 |
 | **自訂 Label** | Autocomplete 標籤系統，管理員可合併標準化 |
 | **歷史查詢** | 按 label / cluster / severity / 周次 / 日期範圍 跨週篩選 |
-| **趨勢儀表板** | 每週 alert 數量折線、Top-N 排行、維護窗口標註 |
+| **趨勢儀表板** | 每週 alert 數量折線、Top-N 排行、Alert 關聯分析（sweep-line interval overlap） |
+| **歷史比對** | fingerprint-first 精準比對 + alert_name fallback，查看過往處理紀錄 |
+| **AIOps 處理建議** | 可選 LLM 整合，基於歷史紀錄自動生成處理建議（預設停用） |
 | **匯出** | 瀏覽器列印 PDF + CSV/JSON/Markdown API 下載（單週或跨週篩選結果） |
 | **Annotation 自動映射** | Poller 自動從 annotations 填入「現象」與「影響」，值班人員可覆寫 |
 | **時區支援** | `AT_DISPLAY_TIMEZONE` 設定介面時區，週報交接日期自動對應 |
@@ -142,6 +144,12 @@ Deployment 包含：Recreate strategy（避免 SQLite dual-write）、Alembic in
 | `AT_DISPLAY_TIMEZONE` | `Asia/Taipei` | IANA 時區，影響介面顯示與週報交接日期 |
 | `AT_DATA_DIR` | `/data` | SQLite 資料目錄 |
 | `AT_CONFIG_DIR` | `/app/config` | clusters.yaml 所在目錄 |
+| `AT_LLM_PROVIDER` | `none` | LLM 供應商（`openai-compatible` 啟用 AIOps 建議） |
+| `AT_LLM_API_BASE` | `https://api.openai.com/v1` | OpenAI-compatible API base URL |
+| `AT_LLM_API_KEY` | (空) | LLM API key |
+| `AT_LLM_MODEL` | `gpt-4o-mini` | LLM 模型名稱 |
+| `AT_ADMIN_USERS` | (空) | 允許存取 admin API 的使用者清單（逗號分隔），空=所有認證用戶 |
+| `AT_OPENAPI_ENABLED` | `true` | 是否啟用 `/docs`、`/openapi.json`（production 建議關閉） |
 
 ---
 
@@ -164,14 +172,14 @@ sre-alert-tracker/
 │   ├── alembic/               # DB migration (Alembic)
 │   ├── models/                # SQLAlchemy ORM (12 tables)
 │   ├── routers/               # API handlers (13 routers)
-│   ├── services/              # Business logic (9 services)
+│   ├── services/              # Business logic (10 services)
 │   ├── middleware/            # Auth middleware (oauth2-proxy / none)
 │   └── schemas/               # Pydantic models
 ├── frontend/                  # React + TailwindCSS v4 + Vite
 │   └── src/
 │       ├── pages/             # 6 pages
-│       └── components/        # 7 components (含 ErrorBoundary)
-├── tests/                     # 單元測試 (22 files, 157 passed)
+│       └── components/        # 8 components (含 ErrorBoundary, CorrelationSection)
+├── tests/                     # 單元測試 (28 files, 184 passed)
 │   └── e2e/                   # Playwright E2E 瀏覽器測試
 ├── config/                    # clusters.yaml 模板
 ├── lab/                       # Fake Prometheus + Alertmanager

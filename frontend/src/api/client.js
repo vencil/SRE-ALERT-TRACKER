@@ -43,6 +43,7 @@ export const addAlertLabel = (alertId, labelId) =>
   api.post(`/alerts/${alertId}/labels`, { label_id: labelId });
 export const removeAlertLabel = (alertId, labelId) =>
   api.delete(`/alerts/${alertId}/labels/${labelId}`);
+export const fetchAlertHistory = (id, params) => api.get(`/alerts/${id}/history`, { params });
 
 // ── Labels ───────────────────────────────────────────────
 export const fetchLabels = () => api.get("/labels");
@@ -65,6 +66,7 @@ export const deleteFilter = (id) => api.delete(`/filters/${id}`);
 export const fetchTrends = (params, config) => api.get("/dashboard/trends", { params, ...config });
 export const fetchTopAlerts = (params, config) => api.get("/dashboard/top-alerts", { params, ...config });
 export const fetchSeverityDist = (params, config) => api.get("/dashboard/severity-distribution", { params, ...config });
+export const fetchCorrelation = (params) => api.get("/dashboard/correlation", { params });
 
 // ── Export ───────────────────────────────────────────────
 export const exportReportUrl = (id, format = "csv") =>
@@ -90,6 +92,10 @@ export const mergeLabels = (data) => api.post("/labels/merge", data);
 export const fetchMaintenanceWindows = (params) => api.get("/maintenance", { params });
 export const createMaintenanceWindow = (data) => api.post("/maintenance", data);
 export const deleteMaintenanceWindow = (id) => api.delete(`/maintenance/${id}`);
+
+// ── AIOps Suggestion ─────────────────────────────────────
+export const fetchAlertSuggestion = (id) => api.post(`/alerts/${id}/suggest`);
+export const fetchHealth = () => api.get("/health");
 
 // ── Auth / User ─────────────────────────────────────────
 export const fetchCurrentUser = () => api.get("/me");

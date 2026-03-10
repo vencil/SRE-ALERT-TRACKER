@@ -155,7 +155,25 @@ def toggle_report_task(
     assignment.checked_by = data.checked_by
     assignment.checked_at = datetime.now(timezone.utc).replace(tzinfo=None) if data.is_checked else None
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        # Race condition: another request created the assignment; reload and update
+        assignment = (
+            db.query(ReportTaskAssignment)
+            .filter(
+                ReportTaskAssignment.report_id == report_id,
+                ReportTaskAssignment.task_id == task_id,
+            )
+            .first()
+        )
+        if not assignment:
+            raise HTTPException(status_code=500, detail="Failed to create task assignment")
+        assignment.is_checked = data.is_checked
+        assignment.checked_by = data.checked_by
+        assignment.checked_at = datetime.now(timezone.utc).replace(tzinfo=None) if data.is_checked else None
+        db.commit()
     db.refresh(assignment)
 
     task = db.query(WeeklyTask).filter(WeeklyTask.id == task_id).first()

@@ -2,6 +2,39 @@
 
 All notable changes to the **SRE Alert Tracking System** will be documented in this file.
 
+## [v1.2.0] — 2026-03-10
+
+### 新增功能
+
+- **Alert 歷史比對：** `GET /api/alerts/{id}/history` — fingerprint-first + alert_name fallback 雙層查詢，只回傳有 action_taken 的歷史紀錄。前端 AlertDetail 頁新增可展開的「歷史紀錄」區塊，顯示精準/同名匹配標籤、處理作法、值班人員
+- **Alert 關聯分析：** `GET /api/dashboard/correlation` — sweep-line interval overlap 演算法分析同時段重疊的 alert 群組。前端 Dashboard 頁新增「Alert 關聯分析」區塊，支援按週選擇、展開群組詳情含 mini Gantt timeline
+- **AIOps 處理建議：** `POST /api/alerts/{id}/suggest` — 可選 LLM 整合（`AT_LLM_PROVIDER` + `AT_LLM_API_KEY`），基於 alert 資訊與歷史處理紀錄生成建議。前端 AlertDetail 頁新增 AI 建議區塊，含 skeleton loading、disclaimer、一鍵套用。預設停用（`AT_LLM_PROVIDER=none`），不影響核心功能
+
+### 安全性改善
+
+- **Admin 端點權限控管：** `/api/admin/*` 新增 `require_admin` dependency，透過 `AT_ADMIN_USERS` 環境變數限制存取（Lab mode 全開放）
+- **Cluster URL SSRF 防禦：** `clusters.yaml` 載入時驗證 URL scheme（僅 http/https）、封鎖 AWS/GCP metadata endpoints 與 link-local 位址
+- **LLM API key 不外洩：** httpx 錯誤訊息經過 sanitize，不含 Authorization header；API 端點僅回傳通用錯誤訊息
+- **Label merge 加鎖：** `with_for_update()` 防止高併發下的關聯遺失 race condition
+- **Task assignment 容錯：** toggle endpoint 新增 IntegrityError 處理，應對 concurrent auto-create
+- **OpenAPI 生產環境隱藏：** 新增 `AT_OPENAPI_ENABLED`（預設 true），production 可設為 false 隱藏 `/docs`、`/openapi.json`
+
+### 前端改善
+
+- **Dashboard CorrelationSection 重構：** 從 Dashboard.jsx 提取為獨立 component，修正 setState-in-render anti-pattern 改用 useEffect
+- **Search.jsx 錯誤處理：** 初始載入 clusters/labels 的 Promise 加上 `.catch()` 防止 unhandled rejection
+- **共用常數提取：** 新增 `constants.js` 統一 severity 顏色（hex + Tailwind class）與 chart 調色盤，消除 Dashboard / CorrelationSection / SeverityBadge 間的重複定義
+
+### 測試
+
+- 新增 `test_alert_history.py`（7 tests）：fingerprint 優先、排除自身、過濾空 action_taken、limit、週資訊
+- 新增 `test_correlation.py`（7 tests）：空週、重疊群組、孤立排除、窗口邊界、cluster filter、三方重疊
+- 新增 `test_suggest.py`（4 tests）：501 disabled、404 not found、mocked LLM success、default disabled
+- 新增 `test_security.py`（9 tests）：admin auth、SSRF validation、LLM key sanitization
+- 全部 184 passed, 3 skipped
+
+---
+
 ## [v1.1.1] — 2026-03-10
 
 ### Bug Fixes
