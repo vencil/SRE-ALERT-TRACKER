@@ -256,6 +256,8 @@ ELSE:
     occurrence_count = 1
 ```
 
+**DB 層級防禦：** `alert_records` 表設有 `UniqueConstraint("daily_section_id", "fingerprint")`。ORM 層以 `with_for_update()` 做 SELECT-FOR-UPDATE 避免 race condition，UniqueConstraint 作為最終防線——即使 ORM 層被繞過，DB 也會拒絕重複插入（IntegrityError）。
+
 **Fingerprint 來源優先序：**
 1. Alertmanager API 回傳的 `fingerprint` 欄位（優先）
 2. 若從 Prometheus query_range 取得，用 `hashlib.sha256(sorted(label_set))` 計算
@@ -429,7 +431,11 @@ filter_rules 表：
 └─────────────────────────────────────────────────┘
 ```
 
-### 6.3 Alert 自動/手動欄位設計
+### 6.3 Alert 顯示上限
+
+週報明細頁一次載入最多 **500 筆** alert（API `limit=500`）。達到上限時前端顯示黃色截斷警告，引導使用者透過 CSV 匯出查看完整紀錄或縮小查詢範圍。此限制是為了避免 DOM 節點過多導致瀏覽器卡頓（500 張 AlertCard 含 textarea 已是效能邊界）。
+
+### 6.4 Alert 自動/手動欄位設計
 
 | 欄位 | 來源 | 預設狀態 | 逃生門 |
 |------|------|---------|--------|
@@ -681,10 +687,13 @@ sre-alert-tracker/
 │   │   └── admin.py
 │   ├── services/                  # Business logic
 │   │   ├── alert_poller.py        # Dual-engine pull + dedup + filter
+│   │   ├── dedup.py               # Fingerprint computation + upsert
+│   │   ├── filter_engine.py       # Whitelist/blacklist evaluation
 │   │   ├── report_generator.py    # Weekly report auto-creation
 │   │   ├── retention_manager.py   # Data purge scheduler
 │   │   ├── cluster_health.py      # Health check logic
-│   │   └── export_service.py      # CSV/JSON generation
+│   │   ├── export_service.py      # CSV/JSON/Markdown generation
+│   │   └── timezone_utils.py      # UTC ↔ display timezone conversion
 │   ├── middleware/
 │   │   └── auth.py                # oauth2-proxy header extraction
 │   ├── schemas/                   # Pydantic request/response models
@@ -744,12 +753,18 @@ sre-alert-tracker/
 | 2 | 雙引擎拉取（AM + PM） | Alertmanager 資料乾淨但有盲區；Prometheus query_range 補歷史避免漏短暫 alert | 單拉 AM 更簡單但會漏 flapping alerts |
 | 3 | Fingerprint 為 dedup key | 精確到 label set 層級，比粗粒度的 (alertname, cluster, instance) 更準確 | 粗粒度 dedup 會把不同問題合併 |
 | 4 | 單一 Docker image | 降低 K8s 部署複雜度，一個 Deployment 搞定 | 前後端分離需多個 Deployment + Nginx |
-| 5 | APScheduler in-process | 不需額外 CronJob 或 Celery；單 replica 足夠 | K8s CronJob 更 cloud-native 但增加元件 |
+| 5 | APScheduler in-process | 不需額外 CronJob 或 Celery；**必須單 replica**（見下方說明） | K8s CronJob 更 cloud-native 但增加元件 |
 | 6 | oauth2-proxy header 信任 | 不重複實作登入邏輯；Service ClusterIP 確保 header 不可偽造 | 自建 JWT auth 增加複雜度 |
 | 7 | 每週一自動生成報表 | 減少人工操作；空白框架不佔資源 | 手動建立更彈性但容易遺忘 |
 | 8 | Label 多對多關聯 | 支援多 label 分類，跨週查詢彈性高 | 直接在 alert_record 存 JSON array 更簡單但查詢效能差 |
 | 9 | 不動 M4M 職責 | M4M 越簡單越可靠；追蹤系統獨立維護 cluster 清單，拉取時順帶 health check | 中央化清單更 SSOT 但增加 M4M 複雜度 |
 | 10 | 自建而非採用開源 | 現有工具（Keep/OneUptime/Alerta）不涵蓋值班紀錄+週報管理的核心需求；硬改比新建更慢 | 基於 Keep 擴展功能更多但維護負擔重 |
+
+> **⚠️ 多 Replica 限制：** 本系統**嚴禁多 replica 部署**，原因有二：
+> 1. **APScheduler in-process** — 每個 replica 都會獨立觸發排程任務（alert 拉取、週報生成），造成重複寫入。雖然 fingerprint dedup + UniqueConstraint 可防止重複 alert，但 occurrence_count 會被多 replica 各自累加，導致計數不準。
+> 2. **SQLite 並發寫入** — SQLite 僅支援單 writer，多 replica 同時寫入會觸發 `database is locked` 錯誤。即使切換到 MariaDB 也無法解決 APScheduler 重複執行問題。
+>
+> 若未來需要 HA，需改用外部排程（K8s CronJob + leader election）或分散式鎖（Redis / DB advisory lock）。Deployment strategy 已設為 `Recreate` 確保 rolling update 時不會短暫存在兩個 replica。
 
 ---
 

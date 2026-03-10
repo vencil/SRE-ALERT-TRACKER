@@ -2,6 +2,37 @@
 
 All notable changes to the **SRE Alert Tracking System** will be documented in this file.
 
+## [v1.1.1] — 2026-03-10
+
+### Bug Fixes
+
+- **APScheduler 首次拉取延遲：** `interval` trigger 預設等待一個完整 interval 才首次執行。加上 `next_run_time=datetime.now()` 確保啟動時立即拉取
+- **CORS 設定違反 W3C 規範：** `allow_origins=["*"]` + `allow_credentials=True` 不合規。改為環境感知：Lab mode (`auth_mode=none`) 使用 wildcard + 禁用 credentials；Production mode 從 `AT_CORS_ORIGINS` 環境變數讀取白名單
+
+### 改進
+
+- **Dedup 防禦性 UniqueConstraint：** alert_records 新增 `UniqueConstraint("daily_section_id", "fingerprint")`，作為 ORM 層 `with_for_update()` 的 DB 層級防禦，防止極端 race condition 產生重複紀錄
+- **前端截斷警告：** 週報明細頁在 alert 數量達 500 筆上限時顯示黃色警告橫幅，引導使用者透過 CSV 匯出查看完整紀錄
+
+### 測試
+
+- 新增 `tests/conftest.py` 共用 fixtures（`seed_cluster`、`seed_report_section`），消除 test_dedup / test_dedup_autofill 重複 seed 邏輯
+- 新增 `test_poller_resilience.py`（8 tests）：Alertmanager/Prometheus HTTP 異常（timeout、connection error、500、malformed JSON）
+- 新增 `test_timezone_boundaries.py`（9 tests）：freezegun 凍結時間驗證 Asia/Taipei 週/日邊界、ISO 跨年
+- 新增 UniqueConstraint 驗證測試（2 tests）：IntegrityError + 跨 section 同 fingerprint 允許
+- E2E 自動儲存測試合併為 `@pytest.mark.parametrize`（3→1 test function）
+- 全部 153 passed, 3 skipped
+
+### 文件
+
+- 更新 `docs/internal/github-release-playbook.md`、`windows-mcp-playbook.md`（Cowork VM push 可行性、已知陷阱擴充）
+
+### 依賴（dev）
+
+- 新增 `freezegun` 測試依賴
+
+---
+
 ## [v1.1.0] — 2026-03-10
 
 ### 新增功能

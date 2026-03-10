@@ -17,7 +17,7 @@ TESTING=1 python -m pytest tests/test_poller.py -v
 
 **環境變數 `TESTING=1`**：跳過 APScheduler 啟動、clusters.yaml sync 等 startup 副作用。
 
-**conftest.py** 提供：SQLite in-memory DB fixture (`db`)、TestClient fixture (`client`)。
+**conftest.py** 提供：SQLite in-memory DB fixture (`db`)、TestClient fixture (`client`)、共用 seed fixtures（`seed_cluster`、`seed_report_section`）。
 
 ## 測試檔案對照
 
@@ -39,8 +39,11 @@ TESTING=1 python -m pytest tests/test_poller.py -v
 | `test_auth.py` | middleware/auth | none mode |
 | `test_admin.py` | routers/admin | retention + purge |
 | `test_seed.py` | routers/test_seed | seed 端點 CRUD |
+| `test_dedup_autofill.py` | dedup + annotation 映射 | autofill + raw_labels |
+| `test_poller_resilience.py` | alert_poller HTTP 異常 | timeout/connection error/500/malformed JSON |
+| `test_timezone_boundaries.py` | timezone_utils + report_generator | freezegun 週/日邊界 + ISO 跨年 |
 
-目前：112 passed, 3 skipped。
+目前：153 passed, 3 skipped。
 
 ## E2E 瀏覽器測試
 
