@@ -49,22 +49,34 @@ grep -rh "^import\|^from" tests/ | sort -u | head -20
 
 ### Step 2: 版號 Bump + Tag
 
+> **Lesson Learned (v1.2.0)：** 大功能 release 要用「兩段式 commit」—— 先 commit 所有功能/修正/文件，再跑 `bump --tag` 建立乾淨的版號 commit。`--tag` 要求 clean working tree，不能跟功能改動混在一起。
+
 ```bash
-make version-check                        # 確認全 repo 版號一致
-# CHANGELOG.md 需手動更新 release notes（在 bump 前完成）
-python scripts/bump_version.py --bump 1.x.x --tag   # bump → commit → tag
-# 或分步：
-python scripts/bump_version.py --bump 1.x.x
-git add -A && git commit -m "chore: bump version to v1.x.x"
-git tag -a v1.x.x -m "Release v1.x.x"
+# ─── 大版本 release 標準流程 ───
+
+# 1. 更新 CHANGELOG.md：[Unreleased] → [v1.x.x] — 日期
+# 2. Commit 所有功能 + 修正 + 文件改動
+git add <all-changed-files>
+git commit -m "feat: summary of all changes"
+
+# 3. 版號 bump（working tree 必須 clean）
+make version-check                                     # 確認舊版號一致
+python scripts/bump_version.py --bump 1.x.x --tag     # bump → commit → tag
+
+# ─── 或 patch release 簡化版 ───
+python scripts/bump_version.py --bump patch --tag
 ```
 
-> **注意：** `--tag` 要求 working tree 乾淨，所有變更先 commit。
+bump script 自動同步：`VERSION` → `Dockerfile LABEL` → `README.md` → `CLAUDE.md` → `docs/architecture-design.md`。
 
 ### Step 3: Push
 
 ```bash
+# Cowork VM（首選，credential.helper store + PAT）
 git push origin main v1.x.x
+
+# Windows MCP（備用，VM push 失敗時）
+# & 'C:\Program Files\Git\cmd\git.exe' push origin main v1.x.x 2>&1
 ```
 
 ### Step 4: CI 自動 Build + Release
@@ -149,6 +161,30 @@ $r = Invoke-RestMethod -Uri ".../releases/tags/v1.x.x" -Headers $headers
 Invoke-RestMethod -Uri ".../releases/$($r.id)" -Method Patch -Headers $headers `
     -Body ([System.Text.Encoding]::UTF8.GetBytes($update)) `
     -ContentType "application/json; charset=utf-8"
+```
+
+## 大版本 Release Checklist (v1.2.0 經驗)
+
+適用於跨多 session 累積的大功能 release：
+
+```
+□ 功能開發完成 + 單元測試全過 (make test)
+□ 前端 lint 無錯誤 (npm run lint via Windows MCP)
+□ 前端 build 成功 (npm run build via Windows MCP)
+□ 多 Agent review (backend / frontend / tests / docs+security)
+□ Review 修正分波執行 (P0 → P1 → P2)，每波跑 test + lint
+□ CHANGELOG.md [Unreleased] → [v1.x.x] — 日期
+□ 文件一致性：CLAUDE.md / README / architecture / deployment-guide
+   - 計數核對：routers、services、models、components、test files、passed count
+   - 環境變數表完整（新增的 AT_* 都有列）
+   - API endpoint 表完整
+□ Commit 所有功能改動（一個乾淨的 feature commit）
+□ bump_version.py --bump X.Y.Z --tag（clean tree 上執行）
+□ version-check 全 OK
+□ git push origin main vX.Y.Z
+□ CI workflow 跑過（test → build → release）
+□ 驗證 GitHub Release 存在 + GHCR image 可拉
+□ Playbooks 更新 lesson learned
 ```
 
 ## 已知陷阱

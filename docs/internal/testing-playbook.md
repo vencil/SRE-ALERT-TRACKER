@@ -45,8 +45,12 @@ TESTING=1 python -m pytest tests/test_poller.py -v
 | `test_export_markdown.py` | routers/export | Markdown 匯出格式 |
 | `test_timezone_utils.py` | services/timezone_utils | 時區轉換 helpers |
 | `test_cascade_delete.py` | models cascade | ShiftReport → Section → Alert 級聯刪除 |
+| `test_alert_history.py` | routers/alerts (history) | fingerprint 優先、排除自身、過濾空 action_taken、limit |
+| `test_correlation.py` | routers/dashboard (correlation) | 空週、重疊群組、孤立排除、窗口邊界、三方重疊 |
+| `test_suggest.py` | routers/alerts (suggest) + llm_service | 501 disabled、404 not found、mocked LLM、default disabled |
+| `test_security.py` | admin auth + SSRF + LLM sanitize | admin 權限、URL 驗證、錯誤訊息不洩漏 API key |
 
-目前：22 files, 157 passed, 3 skipped。
+目前：28 files, 184 passed, 3 skipped。
 
 ## E2E 瀏覽器測試
 
@@ -113,3 +117,30 @@ docker compose --profile mariadb up -d
 **第一輪（正確性）：** 逐檔重讀 → 確認邏輯正確 → 測試 fixture 與真實行為一致 → 交叉比對 CLAUDE.md / CHANGELOG / README 計數
 
 **第二輪（完整性）：** edge case 補充 → 跨文件一致性（版號、計數、引用）→ `pytest -v` 全過 → 文件更新
+
+## 已知測試陷阱
+
+| # | 陷阱 | 解法 |
+|---|------|------|
+| 1 | `TESTING=1` 漏設 | Makefile `test` / `test-quick` 必須帶 `TESTING=1`，否則 APScheduler startup 副作用干擾測試 |
+| 2 | Pydantic Settings `@property` 無法 mock | `config.settings.llm_enabled` 是 `@property`，`unittest.mock.patch` 會失敗。改 patch 底層欄位：`patch.object(settings, "llm_provider", "openai-compatible")` + `patch.object(settings, "llm_api_key", "sk-test")` |
+| 3 | httpx mock 路徑要精確 | `patch("services.llm_service.httpx.AsyncClient")` — mock 使用處，不是定義處 |
+| 4 | SQLite in-memory 不支援 `with_for_update()` | conftest 的 `get_db()` override 用 `StaticPool`；`with_for_update()` 在 SQLite 靜默忽略，不影響測試正確性但無法驗證 row-level locking |
+| 5 | freezegun 與 APScheduler 衝突 | `TESTING=1` 關閉 scheduler 後才能安全使用 `@freeze_time` |
+
+## 多 Agent Review 方法論（v1.2.0 經驗）
+
+大功能完成後的品質審查流程：
+
+**四路平行 review（Agent tool）：**
+1. Backend agent — 正確性、race condition、error handling
+2. Frontend agent — React anti-pattern、lint、效能
+3. Tests agent — 覆蓋率缺口、fixture 正確性
+4. Docs+Security agent — 文件一致性、env vars、SSRF、auth
+
+**三波修正：**
+- Wave 1 (P0): 安全性 + 正確性（admin auth、SSRF、key exposure、race condition）
+- Wave 2 (P1): 文件同步 + 生產配置（CHANGELOG、README、architecture、OpenAPI toggle）
+- Wave 3 (P2): 程式碼整潔（共用常數提取、component 拆分、dead code 移除）
+
+每波修完跑 `make test` + `make lint` 確認不回歸。
