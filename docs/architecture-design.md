@@ -1,6 +1,6 @@
 # 架構設計文件 — SRE Alert Tracking System
 
-> **版本：** v1.1.1
+> **版本：** v1.2.0
 > **相關文件：** [CLAUDE.md](../CLAUDE.md) | [README.md](../README.md)
 
 ---
