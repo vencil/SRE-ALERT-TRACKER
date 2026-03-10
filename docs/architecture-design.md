@@ -884,6 +884,12 @@ v1.2.0 引入可選的 LLM 整合，為值班人員提供基於歷史處理紀�
 
 | 優先級 | 功能 | 說明 |
 |--------|------|------|
-| P1 | Slack/Teams 通知整合 | 週報生成時自動推送摘要到頻道 |
-| P1 | 值班人員自動帶入 | 從 oauth2-proxy header 自動辨識當前使用者 |
-| P3 | Webhook 接收模式 | 除了 pull，也支援 Alertmanager webhook push |
+| P1 | Slack/Teams 通知整合 | 週報生成時自動推送摘要到頻道；alert 風暴超過閾值即時通知 |
+| P1 | 值班人員自動帶入 | 從 oauth2-proxy header 自動辨識當前使用者，免手動填寫 operator_name |
+| P2 | Structured Logging | JSON 格式 log 輸出（目前 print/logging 混用），整合 ELK / Loki 可觀測性 |
+| P2 | CI 安全掃描 | `pip audit` + `npm audit` 自動檢查已知漏洞依賴，整合至 release workflow |
+| P2 | LLM Rate Limiting | `/suggest` 端點加入 per-user rate limit，防止濫用造成 LLM 成本失控 |
+| P2 | Alert 分群規則自訂 | 使用者可定義 grouping 規則（如按 namespace / service），取代單純的 fingerprint 收斂 |
+| P3 | Webhook 接收模式 | 除了 pull，也支援 Alertmanager webhook push，降低拉取延遲 |
+| P3 | Grafana Dashboard 嵌入 | 提供預建 Grafana JSON model，直接匯入即可看到 alert 趨勢，不依賴本系統前端 |
+| P3 | Multi-tenant 支援 | 按團隊/部門隔離資料，共用同一套部署 |

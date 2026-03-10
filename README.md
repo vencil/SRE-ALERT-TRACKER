@@ -179,7 +179,7 @@ sre-alert-tracker/
 │   └── src/
 │       ├── pages/             # 6 pages
 │       └── components/        # 8 components (含 ErrorBoundary, CorrelationSection)
-├── tests/                     # 單元測試 (28 files, 184 passed)
+├── tests/                     # 單元測試 (26 files, 184 passed)
 │   └── e2e/                   # Playwright E2E 瀏覽器測試
 ├── config/                    # clusters.yaml 模板
 ├── lab/                       # Fake Prometheus + Alertmanager

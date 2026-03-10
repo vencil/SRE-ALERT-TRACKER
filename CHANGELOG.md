@@ -2,6 +2,24 @@
 
 All notable changes to the **SRE Alert Tracking System** will be documented in this file.
 
+## [v1.2.1] — 2026-03-11
+
+### 修正
+
+- **LLM prompt token 截斷：** `llm_service.py` 新增 `_truncate()` 函式（`_MAX_FIELD_CHARS=300`），防止歷史紀錄中長 stack trace 溢出小型模型 context window
+- **CorrelationSection React state pattern：** 移除 microtask hack（`Promise.resolve().then()`），改為直接 `setLoading(true)` + eslint-disable 註解
+- **ORM limit+joinedload 安全註解：** `routers/alerts.py` history/suggest 查詢加上 `.selectinload()` 建議註解，防止未來誤用 `.joinedload()` + `.limit()` 組合
+- **Lazy import 說明：** 補充 `llm_service` 為何在函式內 import 的註解
+
+### 文件
+
+- **架構設計：** 新增 Section 14「AIOps 建議機制」（prompt 設計、歷史檢索策略、token 截斷、安全措施、LLM 相容性）；C4 元件圖新增 LLM Provider 節點；Section 15 Roadmap 擴充至 9 項
+- **CLAUDE.md 瘦身：** 202→120 行，詳細目錄/資料模型/API 端點改為索引至 architecture-design.md；保留核心機制、開發規範、Playbook-First 工作模式
+- **Playbook 更新：** windows-mcp-playbook 新增 pitfall #14-16（DC cmd 編碼、PowerShell timeout、VM credential store）
+- **README 修正：** 測試檔案數 28→26（實際計數）
+
+---
+
 ## [v1.2.0] — 2026-03-10
 
 ### 新增功能
