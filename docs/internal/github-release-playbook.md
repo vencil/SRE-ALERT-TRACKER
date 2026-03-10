@@ -1,187 +1,169 @@
-# GitHub Release Playbook
+# GitHub Release — 操作手冊 (Playbook)
 
-> Cowork VM 環境下的 git push、Docker image build、GitHub Release 流程。
+> AI Agent 透過 Cowork VM + Windows MCP 執行 git push、CI build、GitHub Release 的流程。
 > **相關文件：** [Windows-MCP Playbook](windows-mcp-playbook.md) | [Testing Playbook](testing-playbook.md)
 
 ## 安全規則
 
-**絕對禁止將 GitHub token 寫入任何 repo 檔案。** 包含但不限於：
-- 本 playbook、CLAUDE.md、任何 `.md` / `.yaml` / `.sh` / `.py` 檔案
-- Git commit message、PR body、Release body
-- 腳本內 hardcoded 字串
+**絕對禁止將 GitHub token 寫入任何 repo 檔案。** Token 只能存在 VM 的 `~/.git-credentials`（session 結束即消失），操作完成後 `rm -f ~/.git-credentials` 清除。
 
-Token 只能存在 VM 的 `~/.git-credentials`（session 結束即消失）。
+## 環境分工
 
-## 環境限制
+| 操作 | Cowork VM | Windows MCP |
+|------|-----------|-------------|
+| git commit / tag / push | ✅ credential.helper store | 備用 |
+| GitHub REST API | ❌ sandbox 擋 `api.github.com` | ✅ PowerShell `Invoke-RestMethod` |
+| CI 狀態查詢 | ❌ | ✅ PowerShell |
 
-| 操作 | Cowork VM | Windows MCP (Fallback) |
-|------|-----------|------------------------|
-| `git commit` / `git tag` | ✅ | ✅ (via batch file) |
-| `git push` | ✅ credential.helper store | ✅ batch file + git.exe |
-| GitHub API (`api.github.com`) | ⚠️ 可能被 sandbox 擋 | ✅ PowerShell |
-| `gh` CLI | ❌ 無法安裝 | ❌ 不在 PATH |
+**結論：** git 操作在 Cowork VM 做，GitHub API（Release 建立、CI 監控）透過 Windows MCP。
 
-**結論：** 優先在 Cowork VM 完成所有 git 操作（commit/tag/push）。GitHub API 呼叫（建立 Release 等）若被 sandbox 擋，再走 Windows MCP。
+## 認證設定（Cowork VM）
 
-> **2026-03 實測更新：** Cowork VM `git push` 搭配 `credential.helper store` + PAT 可以成功推送。若遇到 403，fallback 到 Windows MCP batch file。
+Fine-grained PAT 需要 permissions：**Contents** (R/W) + **Metadata** (R) + **Workflows** (R/W)。
 
-## 認證設定
-
-使用者需提供 GitHub Fine-grained PAT，需要的 permissions：
-
-| Permission | Level | 用途 |
-|-----------|-------|------|
-| Contents | Read and write | git push, tag |
-| Metadata | Read | 基礎 API 存取 |
-| Workflows | Read and write | push `.github/workflows/` 檔案 |
-
-> **注意：** 沒有 `Workflows` scope 的 PAT 可以 push 一般程式碼，但 push 含 `.github/workflows/` 變更的 commit 會被 reject：`refusing to allow a Personal Access Token to create or update workflow ... without workflow scope`。
-
-設定流程（在 Cowork VM 內）：
+> **缺 Workflows scope** 會導致 push 含 `.github/workflows/` 變更的 commit 被 reject。
 
 ```bash
-# 使用者提供 token 後，Agent 執行：
 git config --global credential.helper store
 echo "https://<USERNAME>:<TOKEN>@github.com" > ~/.git-credentials
-git config --global user.email "<EMAIL>"
-git config --global user.name "<NAME>"
-```
 
-驗證：
-```bash
-git push --dry-run origin main   # 應回 "Everything up-to-date"
-git ls-remote --heads origin     # 應列出 remote branches
+# 驗證
+git push --dry-run origin main   # "Everything up-to-date"
 ```
-
-> **清理：** 操作完成後 `rm -f ~/.git-credentials` 移除 token。
 
 ## Release 標準流程
 
-### Step 1: 版號驗證
+### Step 1: 確保 CI 依賴同步
 
+> **Lesson Learned (v1.1.1)：** 本地 `pip install` 裝的套件不代表 CI 也有。新增測試依賴時，必須同步更新 `.github/workflows/release.yaml` 的 `pip install` 行。
+>
+> 例如：新增 `freezegun` 和 `pytest-asyncio` 用於測試，本地全過但 CI 因缺套件而失敗。
+
+**檢查清單：**
 ```bash
-make version-check        # 確認全 repo 版號一致
+# 比對本地 pip 與 CI install 行
+grep "pip install" .github/workflows/release.yaml
+# 確認 import 的測試套件都在 CI install 列表中
+grep -rh "^import\|^from" tests/ | sort -u | head -20
 ```
 
-### Step 2: Commit & Tag（Cowork VM）
+### Step 2: 版號 Bump + Tag
 
 ```bash
-git add <files>
-git commit -m "v1.x.x — 摘要"
-git tag v1.x.x
+make version-check                        # 確認全 repo 版號一致
+# CHANGELOG.md 需手動更新 release notes（在 bump 前完成）
+python scripts/bump_version.py --bump 1.x.x --tag   # bump → commit → tag
+# 或分步：
+python scripts/bump_version.py --bump 1.x.x
+git add -A && git commit -m "chore: bump version to v1.x.x"
+git tag -a v1.x.x -m "Release v1.x.x"
 ```
 
-> **注意：** Cowork VM 首次 commit 需設定 user.email / user.name，否則 fatal。
+> **注意：** `--tag` 要求 working tree 乾淨，所有變更先 commit。
 
-### Step 3: Push（優先 Cowork VM 直連）
+### Step 3: Push
 
 ```bash
-# 方式 A：Cowork VM 直連（優先）
 git push origin main v1.x.x
-
-# 方式 B：若 VM push 被 403（Fallback — Windows MCP batch file）
-# 透過 Desktop Commander write_file 寫 batch → start_process (shell: cmd) 執行
 ```
 
-**方式 B — Windows MCP batch file：**
-
-```bat
-@echo off
-cd /d "<WINDOWS_REPO_PATH>"
-"C:\Program Files\Git\cmd\git.exe" remote set-url origin "https://<USER>:<TOKEN>@github.com/<USER>/<REPO>.git"
-"C:\Program Files\Git\cmd\git.exe" push origin main v1.x.x 2>&1
-echo ---EXITCODE=%ERRORLEVEL%---
-```
-
-> **重要：** push 完成後清除 token：
-> ```bat
-> "C:\Program Files\Git\cmd\git.exe" remote set-url origin "https://github.com/<USER>/<REPO>.git"
-> ```
-
-### Step 4: CI Build（自動）
+### Step 4: CI 自動 Build + Release
 
 Tag push 自動觸發 `.github/workflows/release.yaml`：
 
-1. **test** — `pytest`（unit tests，排除 e2e）
-2. **build** — Docker multi-stage build → Push to GHCR (`ghcr.io/vencil/sre-alert-tracker:<tag>`)
-3. **release** — 自動從 CHANGELOG.md 擷取 release notes，建立 GitHub Release
+1. **test** — `pytest`（排除 e2e）
+2. **build** — Docker image → `ghcr.io/vencil/sre-alert-tracker:{version,major.minor,sha}`
+3. **release** — 從 CHANGELOG.md 擷取對應版號的 section → 建立 GitHub Release
 
-Image tags：`<version>`（如 `1.0.0`）、`<major>.<minor>`（如 `1.0`）、`<sha>`。
-
-### Step 5: 手動建立 GitHub Release（備用，CI 已自動處理）
-
-> **注意：** Step 4 的 CI workflow 已包含自動建立 GitHub Release（`softprops/action-gh-release`）。以下僅在 CI 失敗或需手動修改 Release 時使用。
+### Step 5: 驗證（Windows MCP）
 
 ```powershell
-$token = "<TOKEN>"
-$headers = @{ "Authorization" = "token $token"; "Accept" = "application/vnd.github+json" }
-$url = "https://api.github.com/repos/vencil/sre-alert-tracker/releases"
+$headers = @{
+    "Authorization" = "token <TOKEN>"
+    "Accept" = "application/vnd.github+json"
+}
 
-# 短 body — 單行 JSON
-$b = '{"tag_name":"v1.0.0","name":"v1.0.0","body":"Initial release","draft":false,"prerelease":false}'
-Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body $b
+# CI 狀態
+$r = Invoke-RestMethod -Uri "https://api.github.com/repos/vencil/SRE-ALERT-TRACKER/actions/runs?per_page=3" -Headers $headers
+$r.workflow_runs | ForEach-Object { "$($_.name) | $($_.status) | $($_.conclusion)" }
 
-# 長 body / CJK — ConvertTo-Json + UTF8
+# 失敗時看 job 細節
+$runId = $r.workflow_runs[0].id
+$jobs = Invoke-RestMethod -Uri "https://api.github.com/repos/vencil/SRE-ALERT-TRACKER/actions/runs/$runId/jobs" -Headers $headers
+$jobs.jobs | ForEach-Object { "$($_.name) | $($_.conclusion)" }
+
+# 看失敗 log（最後 30 行）
+$jobId = ($jobs.jobs | Where-Object { $_.conclusion -eq "failure" }).id
+$logs = Invoke-RestMethod -Uri "https://api.github.com/repos/vencil/SRE-ALERT-TRACKER/actions/jobs/$jobId/logs" -Headers $headers
+($logs -split "`n")[-30..-1] -join "`n"
+
+# Release 確認
+$rel = Invoke-RestMethod -Uri "https://api.github.com/repos/vencil/SRE-ALERT-TRACKER/releases/latest" -Headers $headers
+"Tag: $($rel.tag_name) | URL: $($rel.html_url)"
+```
+
+## CI 失敗 → Retag 重觸發
+
+CI 失敗後修復 → 需要 retag 才能重新觸發（同名 tag 的 commit 不會重跑 CI）：
+
+```bash
+# 1. 修復問題 + commit
+git add <files> && git commit -m "fix: ..."
+
+# 2. 本地刪除舊 tag，建立新 tag
+git tag -d v1.x.x
+git tag -a v1.x.x -m "Release v1.x.x"
+
+# 3. Push commit + 刪遠端舊 tag + push 新 tag
+git push origin main
+git push origin :refs/tags/v1.x.x
+git push origin v1.x.x
+```
+
+## 手動建立 Release（備用）
+
+> 正常情況下 CI 會自動建立 Release。以下僅在 CI release job 失敗時使用。
+
+```powershell
+# 透過 Windows MCP PowerShell
 $payload = @{
-    tag_name = "v1.0.0"
-    name = "v1.0.0 — SRE Alert Tracker"
+    tag_name = "v1.x.x"
+    name = "v1.x.x — SRE Alert Tracking System"
     body = $bodyText
     draft = $false
     prerelease = $false
 } | ConvertTo-Json -Depth 3
-Invoke-RestMethod -Uri $url -Method Post -Headers $headers `
+
+Invoke-RestMethod -Uri "https://api.github.com/repos/vencil/SRE-ALERT-TRACKER/releases" `
+    -Method Post -Headers $headers `
     -Body ([System.Text.Encoding]::UTF8.GetBytes($payload)) `
     -ContentType "application/json; charset=utf-8"
 ```
 
-> **CJK 必須** 用 `UTF8.GetBytes()` + `charset=utf-8`，否則亂碼。
+> **CJK 字元** 必須用 `UTF8.GetBytes()` + `charset=utf-8`，否則亂碼。
 
-**Release `already_exists` 422 處理：** tag 推送後 GitHub 可能自動建 release 或 CI 已建立。改用 PATCH 更新：
+**Release 已存在（422）** → 先 GET 取 id，再 PATCH：
 
 ```powershell
-# GET tag → 取 id
-$r = Invoke-RestMethod -Uri "https://api.github.com/repos/vencil/sre-alert-tracker/releases/tags/v1.x.x" -Headers $headers
-$id = $r.id
-
-# PATCH 更新 name + body
-$update = @{ name = "v1.x.x — 標題"; body = $bodyText } | ConvertTo-Json -Depth 3
-Invoke-RestMethod -Uri "https://api.github.com/repos/vencil/sre-alert-tracker/releases/$id" `
-    -Method Patch -Headers $headers `
+$r = Invoke-RestMethod -Uri ".../releases/tags/v1.x.x" -Headers $headers
+Invoke-RestMethod -Uri ".../releases/$($r.id)" -Method Patch -Headers $headers `
     -Body ([System.Text.Encoding]::UTF8.GetBytes($update)) `
     -ContentType "application/json; charset=utf-8"
 ```
-
-### Step 6: 驗證
-
-```powershell
-# CI workflow 狀態
-Invoke-RestMethod -Uri "https://api.github.com/repos/vencil/sre-alert-tracker/actions/runs?per_page=3" -Headers $headers
-
-# Release 確認
-$r = Invoke-RestMethod -Uri "https://api.github.com/repos/vencil/sre-alert-tracker/releases/tags/v1.0.0" -Headers $headers
-Write-Host "ID: $($r.id)  TAG: $($r.tag_name)  URL: $($r.html_url)"
-```
-
-> **注意：** PowerShell `Invoke-RestMethod` 回傳 object 的屬性用 `echo` 會是空字串，必須用 `Write-Host` 或 `"$($r.property)"` 字串插值。
 
 ## 已知陷阱
 
 | # | 陷阱 | 解法 |
 |---|------|------|
-| 1 | Cowork VM `git push` 偶爾 403 | `credential.helper store` + PAT 通常可行；若 403 → fallback Windows batch file + git.exe |
+| 1 | CI 缺測試依賴（本地過、CI 掛） | 新增 pip 套件同步更新 `release.yaml` 的 `pip install` 行 |
 | 2 | Cowork VM 無法存取 `api.github.com` | GitHub API 改走 Windows MCP PowerShell |
-| 3 | `gh` CLI 無法安裝 | Windows MCP PowerShell 直接呼叫 REST API |
-| 4 | Windows `git` 不在 PATH | 用完整路徑 `"C:\Program Files\Git\cmd\git.exe"` |
-| 5 | PowerShell 直接呼叫 git.exe 失敗 | 寫 .bat 檔 → Desktop Commander `start_process` (shell: cmd) |
-| 6 | PAT 缺 `Workflows` scope | push `.github/workflows/` 被 reject |
-| 7 | PowerShell JSON CJK 亂碼 | `ConvertTo-Json` + `UTF8.GetBytes()` + `charset=utf-8` |
-| 8 | PowerShell `echo $obj.prop` 為空 | 用 `Write-Host "$($obj.prop)"` 字串插值 |
-| 9 | Release `already_exists` 422 | GET `/releases/tags/<tag>` 取 `id` → PATCH `/releases/<id>` 更新 name + body |
-| 10 | Windows MCP 長 body timeout | Desktop Commander `write_file` 暫存 → PowerShell `Get-Content -Raw` 讀入 → 結束後刪暫存 |
-| 11 | Cowork VM 首次 commit 無 user identity | `git config --global user.email/name` |
-| 12 | Release body 先短後長 | 先 POST 建立（短 body），再 PATCH 更新完整 body（避免一次性 JSON 問題） |
-| 13 | 前端 dependency 未列入 package.json | `import` 的 npm 套件（如 recharts）必須在 package.json `dependencies` 中；dev 有 node_modules 時可能不報錯，CI `npm ci` 必定失敗 |
-| 14 | `npm ci` package-lock.json 不同步 | 手動改 package.json 後 lock file 不一致 → 從乾淨目錄重新生成：`mkdir fresh && cp package.json fresh/ && cd fresh && npm install && cp package-lock.json ../` |
-| 15 | CI re-trigger 需 retag | tag 已存在的 commit 不會重跑 CI → `git push origin :refs/tags/v1.x.x` 刪遠端 tag → `git tag -d v1.x.x && git tag v1.x.x` 本地 retag → push |
-| 16 | Git lock files 阻擋操作 | 需啟用 Cowork 檔案刪除權限（`allow_cowork_file_delete`） → `rm -f .git/*.lock`；或 Windows batch `del /f ".git\index.lock"` |
-| 17 | Token 洩漏到 repo | **嚴格禁止** — 只存 `~/.git-credentials`，操作後 `rm -f` 清除 |
+| 3 | `gh` CLI 無法安裝 | 用 Windows MCP PowerShell REST API |
+| 4 | PAT 缺 `Workflows` scope | push `.github/workflows/` 被 reject，PAT 需含 Workflows R/W |
+| 5 | CI 不重跑（同 tag 同 commit） | 修復後 retag（見上方 retag 流程） |
+| 6 | PowerShell JSON CJK 亂碼 | `ConvertTo-Json` + `UTF8.GetBytes()` + `charset=utf-8` |
+| 7 | PowerShell `echo $obj.prop` 為空 | 用 `"$($obj.prop)"` 字串插值 |
+| 8 | Release `already_exists` 422 | GET `/releases/tags/<tag>` 取 id → PATCH 更新 |
+| 9 | Git lock files 阻擋操作 | `allow_cowork_file_delete` → `rm -f .git/*.lock` |
+| 10 | Token 洩漏到 repo | **嚴格禁止** — 只存 `~/.git-credentials`，操作後 `rm -f` 清除 |
+| 11 | `bump_version.py --tag` 要求 clean tree | 所有變更先 commit，再跑 bump --tag |
+| 12 | Windows MCP Shell 長 body timeout | Desktop Commander `write_file` 暫存 → PowerShell `Get-Content -Raw` 讀入 |
