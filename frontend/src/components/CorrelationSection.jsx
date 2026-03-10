@@ -23,8 +23,7 @@ export default function CorrelationSection({ trends }) {
     const match = effectiveWeek.match(/^(\d{4})-W(\d{2})$/);
     if (!match) return;
     let cancelled = false;
-    // Wrap loading setState in a microtask to satisfy react-hooks/set-state-in-effect
-    Promise.resolve().then(() => { if (!cancelled) setLoading(true); });
+    setLoading(true); // eslint-disable-line react-hooks/set-state-in-effect -- loading flag before async fetch is standard React
     fetchCorrelation({ year: parseInt(match[1], 10), week: parseInt(match[2], 10) })
       .then((data) => { if (!cancelled) setGroups(data.groups ?? []); })
       .catch(() => { if (!cancelled) setGroups([]); })

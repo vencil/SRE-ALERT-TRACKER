@@ -7,9 +7,9 @@
 
 ## 1. 專案概覽
 
-團隊內部 Alert 追蹤紀錄系統。自動從多座 Kubernetes cluster 的 Prometheus / Alertmanager 拉取 alert 資料，提供值班人員填寫處理紀錄、週報管理、趨勢分析與匯出功能。
+團隊內部 Alert 追蹤紀錄系統。自動從多座 Kubernetes cluster 的 Prometheus / Alertmanager 拉取 alert 資料，提供值班人員填寫處理紀錄、週報管理、趨勢分析與匯出功能。v1.2.0 起新增 Sweep-line 演算法的關聯分析（快速定位同時段重疊 alert）、歷史比對（fingerprint-first 雙層查詢回溯過往處理經驗）、以及可選的 LLM 整合（基於歷史紀錄自動生成處理建議草稿）。
 
-**核心痛點：** Alert 風暴期間人工統計紀錄造成值班疲勞；處理紀錄分散無結構化資料，難以回溯與改善。
+**核心痛點：** Alert 風暴期間人工統計紀錄造成值班疲勞；處理紀錄分散無結構化資料，難以回溯與改善；新進同仁缺乏歷史處理經驗參考。
 
 **技術棧：** Python FastAPI + React + TailwindCSS + SQLite/MariaDB，單一 Docker image 部署於 Kubernetes。
 
@@ -87,9 +87,12 @@ graph LR
 
     ORM -->|"DATABASE_URL unset"| SQLITE["SQLite<br/>/data/alerts.db"]
     ORM -->|"DATABASE_URL set"| MARIADB["MariaDB<br/>(External)"]
+    FASTAPI -->|"POST /suggest<br/>OpenAI-compatible API"| LLM["LLM Provider<br/>(Optional)<br/>OpenAI / Ollama / etc."]
 
     classDef container fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
+    classDef external fill:#fff9c4,stroke:#f57f17,stroke-width:2px
     class CONTAINER container
+    class LLM external
 ```
 
 ---
@@ -415,9 +418,9 @@ filter_rules 表：
 |------|------|------|
 | **週報列表** | `/` | 按年/週列出所有報表，顯示 alert 總數、填寫進度 |
 | **週報明細** | `/reports/:id` | 每日分群 → alert 卡片列表 + 任務 checkbox + operator |
-| **Alert 明細** | `/alerts/:id` | 自動欄位（唯讀，逃生門解鎖）+ 手動欄位 textarea + label tag input |
+| **Alert 明細** | `/alerts/:id` | 自動欄位（唯讀，逃生門解鎖）+ 手動欄位 textarea + label tag input + 歷史比對時間軸 + AI 處理建議 |
 | **歷史查詢** | `/search` | 按 label / cluster / severity / 周次 / 日期範圍 篩選 |
-| **趨勢儀表板** | `/dashboard` | 每週 alert 數量折線圖、Top-N alertname 排行、per-cluster 分布 |
+| **趨勢儀表板** | `/dashboard` | 每週趨勢折線圖、Top-N 排行、Severity 圓餅圖、Alert 關聯分析（mini Gantt timeline） |
 | **設定** | `/settings` | Clusters 狀態燈號 + 過濾規則管理 + 任務管理 + Label 管理 + Retention + Poller 設定 |
 
 ### 6.2 週報明細頁面佈局
@@ -475,6 +478,22 @@ filter_rules 表：
 | Labels | 人工選擇/建立 | 空白 tag input (autocomplete) | 直接操作 |
 
 **手動覆寫追蹤：** 任何自動欄位被手動修改時，`manually_edited` flag 設為 `true`，UI 上顯示小標記提示此欄位已被人工調整。
+
+### 6.5 Alert 明細頁 — 歷史紀錄 + AI 建議
+
+AlertDetail 頁（`/alerts/:id`）在 v1.2.0 新增兩個可摺疊區塊：
+
+**歷史紀錄區塊：** 呼叫 `GET /api/alerts/{id}/history` 回傳 fingerprint 精準匹配（優先）+ alert_name 同名匹配的歷史紀錄。每筆顯示匹配類型標籤（精準/同名）、值班人員、處理作法。讓新進同仁快速參考過往處理經驗。
+
+**AI 建議區塊（需 `AT_LLM_PROVIDER` 啟用）：** 點擊「產生 AI 建議」按鈕呼叫 `POST /api/alerts/{id}/suggest`。顯示 skeleton loading → 建議文字 + disclaimer（「此為 AI 草稿，請根據實際情況調整」）→「套用至處理作法」一鍵填入。LLM 未啟用時按鈕隱藏。
+
+### 6.6 Dashboard — Alert 關聯分析
+
+Dashboard 頁（`/dashboard`）新增 `CorrelationSection` 獨立元件：
+
+**互動流程：** 從 trends 資料自動擷取可選週次 → 下拉選擇 → 呼叫 `GET /api/dashboard/correlation?year=N&week=N` → 顯示同時段重疊的 alert 群組列表。每組可展開查看 mini Gantt timeline（水平色條表示各 alert 的 firing 時間區間）和 alert 詳情。
+
+**技術細節：** 使用 derived state pattern（`effectiveWeek = selectedWeek ?? weekOptions[0]`）避免不必要的 useEffect 觸發。Severity 顏色與主題共用 `constants.js`。
 
 ---
 
@@ -805,7 +824,63 @@ sre-alert-tracker/
 
 ---
 
-## 14. 未來擴展方向
+## 14. AIOps 建議機制（Optional LLM 整合）
+
+v1.2.0 引入可選的 LLM 整合，為值班人員提供基於歷史處理紀錄的 AI 建議草稿。整個功能由 `AT_LLM_PROVIDER` 環境變數控制，**預設關閉**（`none`），不影響核心功能。
+
+### 14.1 架構設計
+
+```
+使用者點擊「AI 建議」 → POST /api/alerts/{id}/suggest
+  → 查詢歷史紀錄（fingerprint-first + alert_name fallback，上限 10 筆）
+  → 組裝 system prompt + user prompt
+  → 呼叫 OpenAI-compatible /chat/completions API
+  → 回傳建議文字
+```
+
+**核心元件：**
+
+| 元件 | 檔案 | 職責 |
+|------|------|------|
+| API 端點 | `routers/alerts.py` `/suggest` | 入口、歷史查詢、錯誤處理 |
+| LLM 服務 | `services/llm_service.py` | Prompt 組裝、API 呼叫、回應解析 |
+| 設定 | `config.py` | `AT_LLM_PROVIDER`, `AT_LLM_API_BASE`, `AT_LLM_API_KEY`, `AT_LLM_MODEL` |
+
+### 14.2 歷史紀錄檢索策略
+
+與 `/history` 端點共用相同的雙層查詢邏輯：
+
+1. **Layer 1 — fingerprint match：** 完全相同的 alert（同 label set），最多 10 筆
+2. **Layer 2 — alert_name fallback：** 同名但不同 instance 的 alert，補足至 10 筆
+3. **過濾條件：** 只回傳有 `action_taken` 的紀錄（空值/空字串排除）
+
+### 14.3 Prompt 設計
+
+- **System Prompt：** 角色設定為資深 SRE 顧問，要求繁體中文、100 字以內、直接給出可執行步驟
+- **User Prompt：** 包含當前 alert 上下文（名稱、severity、cluster、phenomenon）+ 歷史紀錄摘要
+- **Token 保護：** 長文字欄位（phenomenon、action_taken）截斷至 `_MAX_FIELD_CHARS = 300` 字元，防止 10 筆紀錄的 stack trace 溢出小型模型的 context window
+
+### 14.4 安全考量
+
+| 措施 | 說明 |
+|------|------|
+| Lazy import | `llm_service` 在函式內才 import，`AT_LLM_PROVIDER=none` 時不載入 httpx |
+| API key 不外洩 | `HTTPStatusError` 捕獲後用 `from None` 切斷 traceback chain，不暴露 response body |
+| 501 快速失敗 | LLM 未啟用時直接回 501，不進入查詢邏輯 |
+| 502 隔離 | LLM 呼叫失敗回 502，與業務邏輯的 4xx 錯誤分離 |
+| 欄位截斷 | 防止使用者可控的 annotation 內容造成 prompt injection 攻擊面擴大 |
+
+### 14.5 相容性
+
+使用 OpenAI-compatible `/chat/completions` 介面，支援：
+
+- **OpenAI** — 直接設定 `AT_LLM_API_BASE=https://api.openai.com/v1`
+- **Ollama** — 本地部署 `AT_LLM_API_BASE=http://localhost:11434/v1`
+- **其他相容服務** — Azure OpenAI、vLLM、LiteLLM 等任何提供 OpenAI-compatible API 的服務
+
+---
+
+## 15. 未來擴展方向
 
 | 優先級 | 功能 | 說明 |
 |--------|------|------|

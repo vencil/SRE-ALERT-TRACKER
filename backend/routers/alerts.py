@@ -290,7 +290,10 @@ async def suggest_action(alert_id: int, db: Session = Depends(get_db)):
         .order_by(AlertRecord.last_firing_at.desc().nullslast())
     )
 
-    # Fingerprint match first, then alert_name
+    # Fingerprint match first, then alert_name fallback.
+    # NOTE: These queries use .join() (INNER JOIN) not .joinedload(),
+    # so .limit() safely applies to the primary table rows.
+    # If labels are needed here in the future, use .selectinload() (not joinedload).
     fp_rows = history_query.filter(AlertRecord.fingerprint == alert.fingerprint).limit(10).all()
     remaining = 10 - len(fp_rows)
     name_rows = []
@@ -319,6 +322,8 @@ async def suggest_action(alert_id: int, db: Session = Depends(get_db)):
     cluster_name = alert.cluster.name if alert.cluster else None
 
     try:
+        # Lazy import: llm_service has httpx dependency and should not be
+        # imported at module level when AT_LLM_PROVIDER=none (most deployments).
         from services.llm_service import generate_suggestion
         suggestion = await generate_suggestion(
             alert_name=alert.alert_name,

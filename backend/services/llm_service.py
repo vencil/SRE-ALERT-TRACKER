@@ -13,6 +13,11 @@ from config import settings
 
 logger = logging.getLogger("alert-tracker.llm")
 
+# Truncate long fields to prevent context window overflow.
+# A single stack trace in phenomenon/action_taken can be thousands of chars;
+# 10 records × long fields would blow smaller model limits.
+_MAX_FIELD_CHARS = 300
+
 SYSTEM_PROMPT = (
     "你是一位資深的 SRE (Site Reliability Engineer) 顧問。"
     "你的任務是根據過去同事的處理紀錄，為當前的 alert 產出一段簡潔的處理作法建議草稿。\n"
@@ -23,6 +28,13 @@ SYSTEM_PROMPT = (
     "4. 如果歷史紀錄有多種不同作法，綜合最佳實務\n"
     "5. 如果歷史紀錄太少或不明確，誠實說明並給出一般性建議"
 )
+
+
+def _truncate(text: str, max_chars: int = _MAX_FIELD_CHARS) -> str:
+    """Truncate long text to prevent context window overflow."""
+    if not text or len(text) <= max_chars:
+        return text or ""
+    return text[:max_chars] + "..."
 
 
 def _build_user_prompt(
@@ -37,7 +49,7 @@ def _build_user_prompt(
     if cluster_name:
         parts.append(f"Cluster: {cluster_name}")
     if phenomenon:
-        parts.append(f"值班人員觀察到的現象：{phenomenon}")
+        parts.append(f"值班人員觀察到的現象：{_truncate(phenomenon)}")
 
     parts.append("")
     if history_records:
@@ -47,9 +59,9 @@ def _build_user_prompt(
             if rec.get("operator_name"):
                 entry += f"，值班: {rec['operator_name']}"
             if rec.get("action_taken"):
-                entry += f"\n處理作法：{rec['action_taken']}"
+                entry += f"\n處理作法：{_truncate(rec['action_taken'])}"
             if rec.get("phenomenon"):
-                entry += f"\n現象：{rec['phenomenon']}"
+                entry += f"\n現象：{_truncate(rec['phenomenon'])}"
             parts.append(entry)
     else:
         parts.append("此告警無歷史處理紀錄。請根據告警名稱和 SRE 經驗給出一般性建議。")
