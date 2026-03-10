@@ -18,22 +18,33 @@ def ensure_report_and_section(db: Session, target_date: date) -> DailySection:
 
     Creates them if they don't exist. Returns the DailySection.
     Uses ISO week numbering (week starts on Monday).
+    Handles concurrent creation via IntegrityError catch + re-query.
     """
     iso_cal = target_date.isocalendar()
     year = iso_cal[0]
     week = iso_cal[1]
 
-    # Find or create report
+    # Find or create report (with race condition guard)
     report = (
         db.query(ShiftReport)
         .filter(ShiftReport.year == year, ShiftReport.week_number == week)
         .first()
     )
     if not report:
-        report = create_weekly_report(db, year, week)
-        logger.info("Auto-created report for %d-W%02d", year, week)
+        try:
+            report = create_weekly_report(db, year, week)
+            db.flush()
+            logger.info("Auto-created report for %d-W%02d", year, week)
+        except IntegrityError:
+            db.rollback()
+            report = (
+                db.query(ShiftReport)
+                .filter(ShiftReport.year == year, ShiftReport.week_number == week)
+                .first()
+            )
+            logger.info("Report for %d-W%02d created by concurrent process", year, week)
 
-    # Find or create daily section
+    # Find or create daily section (with race condition guard)
     section = (
         db.query(DailySection)
         .filter(
@@ -43,13 +54,25 @@ def ensure_report_and_section(db: Session, target_date: date) -> DailySection:
         .first()
     )
     if not section:
-        section = DailySection(
-            report_id=report.id,
-            section_date=target_date,
-        )
-        db.add(section)
-        db.flush()
-        logger.info("Auto-created daily section for %s", target_date)
+        try:
+            section = DailySection(
+                report_id=report.id,
+                section_date=target_date,
+            )
+            db.add(section)
+            db.flush()
+            logger.info("Auto-created daily section for %s", target_date)
+        except IntegrityError:
+            db.rollback()
+            section = (
+                db.query(DailySection)
+                .filter(
+                    DailySection.report_id == report.id,
+                    DailySection.section_date == target_date,
+                )
+                .first()
+            )
+            logger.info("Section for %s created by concurrent process", target_date)
 
     return section
 

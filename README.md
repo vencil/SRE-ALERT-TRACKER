@@ -50,23 +50,29 @@ Alert 風暴發生時，值班人員一邊救火一邊手動統計 alert 發生�
 ```mermaid
 graph LR
     subgraph CLUSTERS["K8s Clusters (×N)"]
-        AM["Alertmanager<br/>/api/v2/alerts"]
-        PM["Prometheus<br/>query_range(ALERTS)"]
+        AM["Alertmanager"]
+        PM["Prometheus"]
     end
 
-    subgraph SYSTEM["Alert Tracker (Single Image)"]
-        POLLER["Poller<br/>APScheduler"]
-        API["FastAPI<br/>REST API"]
+    USER["Browser<br/>值班人員"]
+
+    subgraph INGRESS["Ingress Layer"]
+        NGX["nginx + oauth2-proxy"]
+    end
+
+    subgraph APP["Alert Tracker (Single Image)"]
+        direction TB
+        API["FastAPI<br/>REST API + React Static"]
+        SCHED["APScheduler<br/>(in-process)"]
         DB["SQLite / MariaDB"]
-        FE["React + Tailwind"]
     end
 
-    AM --> POLLER
-    PM --> POLLER
-    POLLER --> DB
+    USER -->|HTTPS| NGX
+    NGX -->|"X-Forwarded-User"| API
+    SCHED -->|"pull every N hours"| AM
+    SCHED -->|"query_range"| PM
+    SCHED -->|"dedup + filter"| DB
     API --> DB
-    FE --> API
-    OAP["oauth2-proxy"] --> API
 ```
 
 ---
@@ -158,14 +164,14 @@ sre-alert-tracker/
 │   ├── alembic/               # DB migration (Alembic)
 │   ├── models/                # SQLAlchemy ORM (12 tables)
 │   ├── routers/               # API handlers (13 routers)
-│   ├── services/              # Business logic (8 services)
+│   ├── services/              # Business logic (9 services)
 │   ├── middleware/            # Auth middleware (oauth2-proxy / none)
 │   └── schemas/               # Pydantic models
 ├── frontend/                  # React + TailwindCSS v4 + Vite
 │   └── src/
 │       ├── pages/             # 6 pages
 │       └── components/        # 7 components (含 ErrorBoundary)
-├── tests/                     # 單元測試 (19 files, 134 passed)
+├── tests/                     # 單元測試 (22 files, 157 passed)
 │   └── e2e/                   # Playwright E2E 瀏覽器測試
 ├── config/                    # clusters.yaml 模板
 ├── lab/                       # Fake Prometheus + Alertmanager

@@ -138,7 +138,7 @@ erDiagram
         int id PK
         int daily_section_id FK
         int cluster_id FK
-        string fingerprint
+        string fingerprint "UK(section_id,fp)"
         string alert_name
         string severity
         string instance
@@ -687,6 +687,7 @@ sre-alert-tracker/
 │   │   └── admin.py
 │   ├── services/                  # Business logic
 │   │   ├── alert_poller.py        # Dual-engine pull + dedup + filter
+│   │   ├── alert_query.py         # Shared alert filter builder (DRY)
 │   │   ├── dedup.py               # Fingerprint computation + upsert
 │   │   ├── filter_engine.py       # Whitelist/blacklist evaluation
 │   │   ├── report_generator.py    # Weekly report auto-creation

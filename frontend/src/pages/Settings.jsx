@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import ErrorBoundary from "../components/ErrorBoundary";
 import {
   fetchClusters,
   triggerHealthCheck,
@@ -28,13 +29,13 @@ export default function Settings() {
   return (
     <div className="space-y-8">
       <h1 className="text-xl font-bold text-gray-900">設定</h1>
-      <ClusterSection />
-      <PollerSection />
-      <FilterSection />
-      <TaskSection />
-      <LabelSection />
-      <MaintenanceSection />
-      <RetentionSection />
+      <ErrorBoundary><ClusterSection /></ErrorBoundary>
+      <ErrorBoundary><PollerSection /></ErrorBoundary>
+      <ErrorBoundary><FilterSection /></ErrorBoundary>
+      <ErrorBoundary><TaskSection /></ErrorBoundary>
+      <ErrorBoundary><LabelSection /></ErrorBoundary>
+      <ErrorBoundary><MaintenanceSection /></ErrorBoundary>
+      <ErrorBoundary><RetentionSection /></ErrorBoundary>
     </div>
   );
 }
@@ -260,6 +261,7 @@ function TaskSection() {
 function LabelSection() {
   const [labels, setLabels] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState(null);
   const [mergeForm, setMergeForm] = useState({ source_id: "", target_id: "" });
 
   useEffect(() => {
@@ -270,11 +272,14 @@ function LabelSection() {
   }, []);
 
   async function handleDelete(id) {
+    setDeletingId(id);
     try {
       await deleteLabel(id);
       setLabels((prev) => prev.filter((l) => l.id !== id));
     } catch {
       /* ignore */
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -357,9 +362,10 @@ function LabelSection() {
               </div>
               <button
                 onClick={() => handleDelete(l.id)}
-                className="text-xs text-red-500 hover:text-red-700"
+                disabled={deletingId === l.id}
+                className="text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
               >
-                刪除
+                {deletingId === l.id ? "刪除中..." : "刪除"}
               </button>
             </div>
           ))}
@@ -375,6 +381,7 @@ function MaintenanceSection() {
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ cluster_id: "", start_time: "", end_time: "", reason: "" });
   const [adding, setAdding] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
   const [clusters, setClusters] = useState([]);
 
   useEffect(() => {
@@ -410,11 +417,14 @@ function MaintenanceSection() {
   }
 
   async function handleDelete(id) {
+    setDeletingId(id);
     try {
       await deleteMaintenanceWindow(id);
       setWindows((prev) => prev.filter((w) => w.id !== id));
     } catch {
       /* ignore */
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -492,9 +502,10 @@ function MaintenanceSection() {
               </div>
               <button
                 onClick={() => handleDelete(w.id)}
-                className="text-xs text-red-500 hover:text-red-700"
+                disabled={deletingId === w.id}
+                className="text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
               >
-                刪除
+                {deletingId === w.id ? "刪除中..." : "刪除"}
               </button>
             </div>
           ))}
@@ -510,6 +521,7 @@ function FilterSection() {
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ rule_type: "blacklist", filter_field: "alertname", filter_value: "" });
   const [adding, setAdding] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
 
   useEffect(() => {
     fetchFilters()
@@ -535,11 +547,14 @@ function FilterSection() {
   }
 
   async function handleDelete(id) {
+    setDeletingId(id);
     try {
       await deleteFilter(id);
       setFilters((prev) => prev.filter((f) => f.id !== id));
     } catch {
       /* ignore */
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -618,9 +633,10 @@ function FilterSection() {
               </div>
               <button
                 onClick={() => handleDelete(f.id)}
-                className="text-xs text-red-500 hover:text-red-700"
+                disabled={deletingId === f.id}
+                className="text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
               >
-                刪除
+                {deletingId === f.id ? "刪除中..." : "刪除"}
               </button>
             </div>
           ))}

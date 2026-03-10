@@ -8,7 +8,7 @@ import axios from "axios";
 
 const api = axios.create({
   baseURL: "/api",
-  timeout: 15000,
+  timeout: 8000,
   headers: { "Content-Type": "application/json" },
 });
 
@@ -49,7 +49,7 @@ export const fetchLabels = () => api.get("/labels");
 export const createLabel = (data) => api.post("/labels", data);
 
 // ── Clusters ─────────────────────────────────────────────
-export const fetchClusters = () => api.get("/clusters");
+export const fetchClusters = (config) => api.get("/clusters", config);
 export const triggerHealthCheck = () => api.post("/clusters/health-check");
 
 // ── Poller ───────────────────────────────────────────────
@@ -62,9 +62,9 @@ export const createFilter = (data) => api.post("/filters", data);
 export const deleteFilter = (id) => api.delete(`/filters/${id}`);
 
 // ── Dashboard ────────────────────────────────────────────
-export const fetchTrends = (params) => api.get("/dashboard/trends", { params });
-export const fetchTopAlerts = (params) => api.get("/dashboard/top-alerts", { params });
-export const fetchSeverityDist = (params) => api.get("/dashboard/severity-distribution", { params });
+export const fetchTrends = (params, config) => api.get("/dashboard/trends", { params, ...config });
+export const fetchTopAlerts = (params, config) => api.get("/dashboard/top-alerts", { params, ...config });
+export const fetchSeverityDist = (params, config) => api.get("/dashboard/severity-distribution", { params, ...config });
 
 // ── Export ───────────────────────────────────────────────
 export const exportReportUrl = (id, format = "csv") =>

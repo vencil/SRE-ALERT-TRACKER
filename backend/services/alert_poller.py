@@ -242,7 +242,14 @@ async def poll_cluster(
 
 
 async def poll_all_clusters(db: Session, interval_hours: int, lookback_hours: int) -> list[dict]:
-    """Poll all active clusters."""
+    """Poll all active clusters.
+
+    Note: DB writes are sequential (SQLite / single-session) but HTTP pulls
+    within each cluster already run concurrently (AM + PM).  Full cluster-level
+    parallelism is intentionally NOT used here because each poll_cluster call
+    writes to a shared DB session.  If you migrate to per-cluster sessions,
+    you can wrap with asyncio.gather + semaphore.
+    """
     clusters = (
         db.query(Cluster)
         .filter(Cluster.status != "removed")

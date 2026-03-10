@@ -15,20 +15,29 @@ export default function Dashboard() {
   const [clusterMap, setClusterMap] = useState({});
   const [weeks, setWeeks] = useState(12);
   const [loading, setLoading] = useState(true);
+  const [partialError, setPartialError] = useState(false);
 
   useEffect(() => {
-    loadData();
+    const controller = new AbortController();
+    loadData(controller.signal);
+    return () => controller.abort();
   }, [weeks]);
 
-  async function loadData() {
+  async function loadData(signal) {
     setLoading(true);
     try {
+      const opts = signal ? { signal } : {};
       const results = await Promise.allSettled([
-        fetchTrends({ weeks }),
-        fetchTopAlerts({ weeks: Math.min(weeks, 4) }),
-        fetchSeverityDist({ weeks: Math.min(weeks, 4) }),
-        fetchClusters(),
+        fetchTrends({ weeks }, opts),
+        fetchTopAlerts({ weeks: Math.min(weeks, 4) }, opts),
+        fetchSeverityDist({ weeks: Math.min(weeks, 4) }, opts),
+        fetchClusters(opts),
       ]);
+
+      if (signal?.aborted) return;
+
+      const hasFailure = results.some((r) => r.status === "rejected");
+      setPartialError(hasFailure);
 
       const trendData = results[0].status === "fulfilled" ? results[0].value : { trends: [] };
       const topData = results[1].status === "fulfilled" ? results[1].value : { top_alerts: [] };
@@ -54,10 +63,11 @@ export default function Dashboard() {
 
       setTopAlerts(topData.top_alerts ?? []);
       setSeverityDist(sevData.distribution ?? []);
-    } catch {
-      /* ignore */
+    } catch (err) {
+      if (err?.name === "AbortError" || err?.message === "canceled") return;
+      console.warn("Dashboard load failed:", err);
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }
 
@@ -83,6 +93,12 @@ export default function Dashboard() {
           <option value={52}>最近 52 週</option>
         </select>
       </div>
+
+      {partialError && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-700 text-sm rounded-lg px-4 py-2">
+          部分資料載入失敗，顯示內容可能不完整。
+        </div>
+      )}
 
       {/* Weekly trend line chart */}
       <section className="bg-white border border-gray-200 rounded-lg p-5">

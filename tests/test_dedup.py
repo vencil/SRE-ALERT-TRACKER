@@ -135,6 +135,43 @@ class TestUpsertAlert:
 
         assert result.last_firing_at == datetime(2026, 3, 9, 15, 0)
 
+    def test_first_firing_at_preserved_on_dedup(self, db_session, seed_report_section):
+        """first_firing_at should keep the earliest time and never be overwritten."""
+        cluster, report, section = seed_report_section
+
+        # Insert with initial time
+        result = upsert_alert(
+            db=db_session, daily_section=section, cluster_id=cluster.id,
+            fingerprint="fp-first", alert_name="FirstTest", severity="warning",
+            instance=None, source_group=None, runbook_url=None,
+            firing_at=datetime(2026, 3, 9, 8, 0),
+        )
+        db_session.flush()
+        assert result.first_firing_at == datetime(2026, 3, 9, 8, 0)
+
+        # Upsert with later time — first_firing_at should NOT change
+        result = upsert_alert(
+            db=db_session, daily_section=section, cluster_id=cluster.id,
+            fingerprint="fp-first", alert_name="FirstTest", severity="warning",
+            instance=None, source_group=None, runbook_url=None,
+            firing_at=datetime(2026, 3, 9, 16, 0),
+        )
+        db_session.flush()
+        assert result.first_firing_at == datetime(2026, 3, 9, 8, 0)
+        assert result.last_firing_at == datetime(2026, 3, 9, 16, 0)
+
+        # Upsert with even earlier time — first_firing_at still should NOT change
+        # (dedup only sets first_firing_at on INSERT, never on UPDATE)
+        result = upsert_alert(
+            db=db_session, daily_section=section, cluster_id=cluster.id,
+            fingerprint="fp-first", alert_name="FirstTest", severity="warning",
+            instance=None, source_group=None, runbook_url=None,
+            firing_at=datetime(2026, 3, 9, 6, 0),
+        )
+        db_session.flush()
+        assert result.first_firing_at == datetime(2026, 3, 9, 8, 0)
+        assert result.occurrence_count == 3
+
     def test_unique_constraint_prevents_duplicate_insert(self, db_session, seed_report_section):
         """Verify DB-level UniqueConstraint(daily_section_id, fingerprint) blocks duplicates.
 

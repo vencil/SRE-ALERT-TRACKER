@@ -42,8 +42,11 @@ TESTING=1 python -m pytest tests/test_poller.py -v
 | `test_dedup_autofill.py` | dedup + annotation 映射 | autofill + raw_labels |
 | `test_poller_resilience.py` | alert_poller HTTP 異常 | timeout/connection error/500/malformed JSON |
 | `test_timezone_boundaries.py` | timezone_utils + report_generator | freezegun 週/日邊界 + ISO 跨年 |
+| `test_export_markdown.py` | routers/export | Markdown 匯出格式 |
+| `test_timezone_utils.py` | services/timezone_utils | 時區轉換 helpers |
+| `test_cascade_delete.py` | models cascade | ShiftReport → Section → Alert 級聯刪除 |
 
-目前：153 passed, 3 skipped。
+目前：22 files, 157 passed, 3 skipped。
 
 ## E2E 瀏覽器測試
 

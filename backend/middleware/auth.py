@@ -10,7 +10,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from config import settings
+from config import AuthMode, settings
 
 logger = logging.getLogger("alert-tracker.auth")
 
@@ -24,7 +24,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             request.state.user = "anonymous"
             return await call_next(request)
 
-        if settings.auth_mode == "oauth2-proxy":
+        if settings.auth_mode == AuthMode.OAUTH2_PROXY:
             user = request.headers.get("X-Forwarded-User", "").strip()
             email = request.headers.get("X-Forwarded-Email", "").strip()
 

@@ -1,6 +1,7 @@
 """Application configuration — reads env vars (AT_* prefix) and clusters.yaml."""
 
 import os
+from enum import Enum
 from pathlib import Path
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -8,6 +9,12 @@ from zoneinfo import ZoneInfo
 import yaml
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
+
+
+class AuthMode(str, Enum):
+    """Supported authentication modes."""
+    NONE = "none"
+    OAUTH2_PROXY = "oauth2-proxy"
 
 
 class Settings(BaseSettings):
@@ -21,15 +28,15 @@ class Settings(BaseSettings):
     )
 
     # --- Auth ---
-    auth_mode: str = Field(
-        default="none",
+    auth_mode: AuthMode = Field(
+        default=AuthMode.NONE,
         alias="AT_AUTH_MODE",
         description="'oauth2-proxy' or 'none'",
     )
 
     # --- Poller ---
-    poller_interval_hours: int = Field(default=8, alias="AT_POLLER_INTERVAL_HOURS")
-    poller_lookback_hours: int = Field(default=12, alias="AT_POLLER_LOOKBACK_HOURS")
+    poller_interval_hours: int = Field(default=8, ge=1, alias="AT_POLLER_INTERVAL_HOURS")
+    poller_lookback_hours: int = Field(default=12, ge=1, alias="AT_POLLER_LOOKBACK_HOURS")
 
     # --- Timeouts (seconds) ---
     pull_timeout: float = Field(default=30.0, alias="AT_PULL_TIMEOUT_SECONDS")

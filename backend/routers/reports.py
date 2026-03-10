@@ -5,7 +5,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func as sa_func
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from database import get_db
 from models.alert_record import AlertRecord
@@ -105,6 +105,7 @@ def get_report(report_id: int, db: Session = Depends(get_db)):
         .options(
             joinedload(ShiftReport.daily_sections)
             .joinedload(DailySection.alert_records)
+            .selectinload(AlertRecord.labels)
         )
         .filter(ShiftReport.id == report_id)
         .first()

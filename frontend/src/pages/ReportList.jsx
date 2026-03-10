@@ -3,6 +3,19 @@ import { Link } from "react-router-dom";
 import { fetchReports, createReport } from "../api/client";
 
 /**
+ * Get ISO year and week number for a given date.
+ * Uses the standard ISO 8601 week date algorithm.
+ */
+function getISOYearWeek(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
+  return { year: d.getUTCFullYear(), week: weekNo };
+}
+
+/**
  * 週報列表頁 — shows all shift reports by year/week.
  * Displays alert count and fill-rate per report.
  */
@@ -32,13 +45,8 @@ export default function ReportList() {
     setCreating(true);
     try {
       const now = new Date();
-      // ISO week calculation
-      const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-      const dayNum = d.getUTCDay() || 7;
-      d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-      const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-      const weekNo = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
-      await createReport({ year: d.getUTCFullYear(), week_number: weekNo });
+      const { year, week } = getISOYearWeek(now);
+      await createReport({ year, week_number: week });
       await loadReports();
     } catch (err) {
       setError(err.message);

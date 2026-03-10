@@ -9,6 +9,7 @@ export default function Search() {
   const [alerts, setAlerts] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   const [clusters, setClusters] = useState([]);
   const [labels, setLabels] = useState([]);
   const [offset, setOffset] = useState(0);
@@ -32,6 +33,7 @@ export default function Search() {
   async function handleSearch(newOffset = 0) {
     setLoading(true);
     setOffset(newOffset);
+    setError(null);
     try {
       const params = { offset: newOffset, limit };
       if (filters.cluster_id) params.cluster_id = filters.cluster_id;
@@ -43,8 +45,10 @@ export default function Search() {
       const data = await fetchAlerts(params);
       setAlerts(data.alerts ?? []);
       setTotal(data.total ?? 0);
-    } catch {
-      /* ignore */
+    } catch (err) {
+      setError(err.message || "搜尋失敗");
+      setAlerts([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
@@ -141,6 +145,13 @@ export default function Search() {
           </span>
         </div>
       </div>
+
+      {/* Error */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 mb-4">
+          {error}
+        </div>
+      )}
 
       {/* Results */}
       {alerts.length > 0 ? (

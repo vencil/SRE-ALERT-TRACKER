@@ -7,10 +7,9 @@ from sqlalchemy.orm import Session, joinedload, subqueryload
 
 from database import get_db
 from models.alert_record import AlertRecord
-from models.daily_section import DailySection
 from models.label import Label
-from models.shift_report import ShiftReport
 from schemas.alert import AlertLabelAction, AlertListResponse, AlertOut, AlertUpdate
+from services.alert_query import apply_alert_filters
 
 router = APIRouter(prefix="/api/alerts", tags=["Alerts"])
 
@@ -32,19 +31,11 @@ def list_alerts(
         subqueryload(AlertRecord.labels),
         joinedload(AlertRecord.cluster),
     )
-
-    if cluster_id is not None:
-        query = query.filter(AlertRecord.cluster_id == cluster_id)
-    if severity is not None:
-        query = query.filter(AlertRecord.severity == severity)
-    if label_id is not None:
-        query = query.filter(AlertRecord.labels.any(Label.id == label_id))
-    if year is not None or week is not None:
-        query = query.join(DailySection).join(ShiftReport)
-        if year is not None:
-            query = query.filter(ShiftReport.year == year)
-        if week is not None:
-            query = query.filter(ShiftReport.week_number == week)
+    query = apply_alert_filters(
+        query,
+        cluster_id=cluster_id, severity=severity,
+        label_id=label_id, year=year, week=week,
+    )
 
     total = query.count()
     alerts = (

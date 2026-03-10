@@ -11,6 +11,7 @@ from models.alert_record import AlertRecord
 from models.daily_section import DailySection
 from models.shift_report import ShiftReport
 from models.retention_config import RetentionConfig
+from services.timezone_utils import today_in_display_tz
 
 logger = logging.getLogger("alert-tracker.retention")
 
@@ -34,7 +35,7 @@ def purge_old_data(db: Session, retention_months: int | None = None) -> dict:
     config = get_retention_config(db)
     months = retention_months if retention_months is not None else config.retention_months
 
-    cutoff_date = date.today() - relativedelta(months=months)
+    cutoff_date = today_in_display_tz() - relativedelta(months=months)
     logger.info("Purging data older than %s (%d months)", cutoff_date.isoformat(), months)
 
     # Find old reports where the latest section_date is before cutoff

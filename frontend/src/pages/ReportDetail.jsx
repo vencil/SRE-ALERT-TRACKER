@@ -17,12 +17,22 @@ export default function ReportDetail() {
   const [expandedSections, setExpandedSections] = useState(new Set());
   const [tasks, setTasks] = useState([]);
   const [alertsTruncated, setAlertsTruncated] = useState(false);
+  const [operatorDraft, setOperatorDraft] = useState("");
+  const [sectionNotes, setSectionNotes] = useState({});
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const r = await fetchReport(id);
       setReport(r);
+      setOperatorDraft(r.operator_name || "");
+
+      // Initialize section notes from loaded data
+      const notesMap = {};
+      for (const s of r.daily_sections ?? []) {
+        notesMap[s.id] = s.operator_name || "";
+      }
+      setSectionNotes(notesMap);
 
       // Expand all sections by default
       const ids = new Set((r.daily_sections ?? []).map((s) => s.id));
@@ -124,7 +134,8 @@ export default function ReportDetail() {
             <label className="text-sm text-gray-500">值班人員:</label>
             <input
               type="text"
-              defaultValue={report.operator_name || ""}
+              value={operatorDraft}
+              onChange={(e) => setOperatorDraft(e.target.value)}
               onBlur={(e) => handleOperatorChange(e.target.value)}
               placeholder="填寫值班人員"
               className="text-sm px-3 py-1.5 border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-300"
@@ -198,7 +209,8 @@ export default function ReportDetail() {
                   {/* Section note */}
                   <input
                     type="text"
-                    defaultValue={section.operator_name || ""}
+                    value={sectionNotes[section.id] ?? section.operator_name ?? ""}
+                    onChange={(e) => setSectionNotes((prev) => ({ ...prev, [section.id]: e.target.value }))}
                     onBlur={(e) => handleSectionNote(section.id, e.target.value)}
                     placeholder="當日備註 / 值班人員"
                     className="w-full text-xs px-2 py-1 border-b border-gray-100 focus:outline-none focus:border-indigo-300"

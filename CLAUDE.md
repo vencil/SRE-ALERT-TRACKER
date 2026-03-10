@@ -28,14 +28,14 @@ backend/
   alembic/             # DB migration scripts (env.py + versions/)
   models/              # 10 files, 12 tables (含 association tables)
   routers/             # 12 files, 13 routers (含 test_seed Lab-only)
-  services/            # 8 files: alert_poller, dedup, filter_engine, report_generator, cluster_health, export_service, retention_manager, timezone_utils
+  services/            # 9 files: alert_poller, alert_query, dedup, filter_engine, report_generator, cluster_health, export_service, retention_manager, timezone_utils
   middleware/auth.py   # Auth middleware
   schemas/             # 8 files, Pydantic models
 frontend/
   src/pages/           # 6 pages (ReportList, ReportDetail, AlertDetail, Search, Dashboard, Settings)
   src/components/      # 7 components (AlertCard, ErrorBoundary, LabelTagInput, LabelTag, SeverityBadge, ExportButton, Navbar)
   src/api/client.js    # Axios API wrapper
-tests/                 # 19 test files, 153 passed
+tests/                 # 22 test files, 157 passed
 tests/e2e/             # Playwright E2E 瀏覽器測試
 scripts/bump_version.py # 版號管理工具
 VERSION                # 版號單一來源

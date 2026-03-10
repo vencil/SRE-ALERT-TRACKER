@@ -230,6 +230,7 @@ kubectl create secret tls alert-tracker-tls \
 > - 缺少 header 的請求回傳 401
 > - `POST /api/test/seed` 端點完全不可用（router 不註冊）
 > - Service 使用 ClusterIP，只有 Ingress 能觸達，防止 header 偽造
+> - **CORS：** 必須設定 `AT_CORS_ORIGINS`（逗號分隔），否則跨域請求將被拒絕。Lab 模式 (`AT_AUTH_MODE=none`) 自動允許所有來源。
 
 ### Step 5: 驗證（Production）
 
@@ -262,6 +263,8 @@ curl -I https://alert-tracker.example.com/api/health
 | `AT_CONFIG_DIR` | `/app/config` | `/app/config` | `/app/config` | clusters.yaml 目錄 |
 | `AT_POLLER_INTERVAL_HOURS` | `8` | `4` | `8` | 拉取間隔 |
 | `AT_POLLER_LOOKBACK_HOURS` | `12` | `6` | `12` | 回溯窗口 |
+| `AT_CORS_ORIGINS` | (空) | 不需設定 | `https://alert-tracker.example.com` | 逗號分隔的允許來源；Production 必須設定 |
+| `AT_DISPLAY_TIMEZONE` | `Asia/Taipei` | `Asia/Taipei` | `Asia/Taipei` | IANA 時區，影響顯示與週報交接 |
 
 > **刻意重疊設計：** interval=8h, lookback=12h → 相鄰拉取重疊 4h。用 fingerprint dedup 確保不重複，但不漏掉短暫 flapping alert。
 

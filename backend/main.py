@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from config import load_clusters_config, settings
+from config import AuthMode, load_clusters_config, settings
 from database import SessionLocal, init_db
 from models.cluster import Cluster
 
@@ -184,7 +184,7 @@ app = FastAPI(
 # CORS — Lab 模式允許所有來源 (不帶 credentials)；
 # Production 應透過 AT_CORS_ORIGINS 環境變數指定明確來源。
 _cors_origins = os.environ.get("AT_CORS_ORIGINS", "").split(",") if os.environ.get("AT_CORS_ORIGINS") else []
-if settings.auth_mode == "none":
+if settings.auth_mode == AuthMode.NONE:
     # Lab / development: allow all origins, no credentials
     app.add_middleware(
         CORSMiddleware,
@@ -194,14 +194,17 @@ if settings.auth_mode == "none":
         allow_headers=["*"],
     )
 else:
-    # Production: explicit origins with credentials (for oauth2-proxy cookies)
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=_cors_origins or ["*"],
-        allow_credentials=bool(_cors_origins),
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # Production: require explicit AT_CORS_ORIGINS; deny cross-origin if unset
+    if _cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=_cors_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+    else:
+        logger.warning("AT_CORS_ORIGINS not set in production mode — CORS disabled")
 
 # Auth middleware
 from middleware.auth import AuthMiddleware  # noqa: E402
@@ -236,7 +239,7 @@ app.include_router(maintenance_router)
 app.include_router(admin_router)
 
 # Lab-only test seed endpoint (AT_AUTH_MODE=none)
-if settings.auth_mode == "none":
+if settings.auth_mode == AuthMode.NONE:
     from routers.test_seed import router as test_seed_router  # noqa: E402
 
     app.include_router(test_seed_router)
