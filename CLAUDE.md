@@ -160,7 +160,42 @@ Image tags：`<version>`、`<major>.<minor>`、`<sha>`。
 
 ## AI Agent 注意事項
 
-- **Python tests** 在 Cowork VM 直接跑，`TESTING=1` 跳過 startup 副作用
-- **前端 build** 需在有 `node_modules` 的目錄跑 `npm run build`，output 放 `backend/static/`
-- **掛載路徑** 無法 `rm` 刪除檔案 → 清空內容或 docker exec rm
-- **GitHub API** 被 sandbox 擋 → 改走 Windows MCP（詳見 playbook）
+### Playbook-First 工作模式
+
+本專案採用 **playbook 驅動** 的 AI 協作模式。`docs/internal/` 下的 playbook 是歷次開發累積的實戰經驗，涵蓋環境限制、已知陷阱、最佳實踐。
+
+**核心原則：遇到問題先查 playbook，不要從零摸索。**
+
+| Playbook | 涵蓋範圍 | 什麼時候該讀 |
+|----------|---------|-------------|
+| `testing-playbook.md` | 測試執行、mock 技巧、已知 gotcha、多 Agent 審查方法論 | 跑測試前、寫新測試前、做 code review 前 |
+| `github-release-playbook.md` | 版號管理、兩段式 commit 模式、Release checklist、CI 監控 | 發版前、tag/push 操作前 |
+| `windows-mcp-playbook.md` | Cowork VM vs Windows MCP 分工、PATH 問題、16 項已知陷阱 | 任何需要 git push / GitHub API / npm build 的操作前 |
+
+### 快速查閱指引
+
+- **跑測試** → `testing-playbook.md`：`TESTING=1` 必帶、Pydantic property mock 用 `model_validator`、httpx mock 路徑是 `services.llm_service.httpx`
+- **發版 / push** → `github-release-playbook.md` + `windows-mcp-playbook.md`：兩段式 commit（功能 commit → bump commit + tag）、VM `git push` 搭配 `~/.git-credentials` 為首選
+- **前端 build** → `windows-mcp-playbook.md`：VM 可能 OOM，改走 Windows MCP 完整路徑 npm
+- **GitHub API** → `windows-mcp-playbook.md`：VM sandbox 擋 `api.github.com`，必須走 Windows MCP PowerShell
+
+### 環境速查
+
+| 操作 | 環境 | 注意 |
+|------|------|------|
+| Python tests | Cowork VM | `TESTING=1` 跳過 APScheduler startup |
+| 前端 build | Windows MCP（首選）或 VM | `npm run build` output → `backend/static/` |
+| git commit / tag | Cowork VM | 掛載目錄共享，兩邊可見 |
+| git push | Cowork VM（首選） | 需設 `~/.git-credentials`；Windows MCP 為備用（常 timeout） |
+| GitHub API | Windows MCP | PowerShell `Invoke-RestMethod`，CJK 需 UTF8 encode |
+| 檔案刪除 | Cowork VM | 掛載路徑需 `allow_cowork_file_delete` 啟用權限 |
+
+### 擴充新領域
+
+若開發過程中產生新的領域知識（例如：DB migration 流程、監控整合、新的外部 API 對接），應以 playbook 形式記錄到 `docs/internal/`，格式參照現有 playbook：
+
+1. 開頭寫明適用範圍與相關文件連結
+2. 環境/工具分工表格
+3. 操作步驟（含可直接複製的指令）
+4. 已知陷阱表格（編號、問題、解法）
+5. 更新本文件的「Playbook」表格與「快速查閱指引」
